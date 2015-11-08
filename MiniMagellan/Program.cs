@@ -28,7 +28,9 @@ namespace MiniMagellan
         public static WayPoints WayPoints;
         public static Arbitrator Ar;
 
-        public static bool ShowTaskRunTrace = false;
+        public static bool ViewTaskRunFlag = false;
+
+        public static float ResetHeading { get; private set; }
 
         public static void _T([CallerMemberName] String T = "")
         {
@@ -135,6 +137,12 @@ namespace MiniMagellan
                 Console.WriteLine($"{kv.Value}: {kv.Key.GetStatus()}");
                 return true;
             });
+            Console.WriteLine($"Waypoints:");
+            WayPoints?.All(wp => {
+                Console.WriteLine($"[{wp.X}, {wp.Y}{(wp.isAction  ? ", Action":"")}]");
+                return true;
+            });
+            Console.WriteLine();
         }
 
         void ListenWayPoints()
@@ -169,11 +177,10 @@ namespace MiniMagellan
 #endif
         }
 
-        private void PublishReceived(object sender, uPLibrary.Networking.M2Mqtt.Messages.MqttMsgPublishEventArgs e)
+        private void PublishReceived(object sender, MqttMsgPublishEventArgs e)
         {
-            // I am here - decode json payload, add waypoints in reverse order
-            string j = Encoding.UTF8.GetString(e.Message);
-            dynamic jsn = JsonConvert.DeserializeObject(j);
+            dynamic jsn = JsonConvert.DeserializeObject(Encoding.UTF8.GetString(e.Message));
+            Program.ResetHeading = jsn.ResetHdg;
             List<WayPoint> wps = new List<WayPoint>(jsn.WayPoints.Count);
             foreach (var t in jsn.WayPoints)
                 wps.Add(new WayPoint { X = t[0], Y = t[1], isAction = (int)t[2] !=0 ? true : false });
@@ -187,7 +194,7 @@ namespace MiniMagellan
         {
             Pilot.Send(new { Cmd = "CONFIG", TPM = 336, MMX = 450, StrRv = -1 });
             Pilot.Send(new { Cmd = "CONFIG", M1 = new int[] { 1, -1 }, M2 = new int[] { -1, 1 } });
-            Pilot.Send(new { Cmd = "RESET" });
+            Pilot.Send(new { Cmd = "RESET", Hdg = ResetHeading });
         }
 
         static void PilotReceive(dynamic json)

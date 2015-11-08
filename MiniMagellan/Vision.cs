@@ -27,7 +27,7 @@ namespace MiniMagellan
                 while (Lock)
                     Thread.SpinWait(100);
 
-                if (Program.ShowTaskRunTrace)
+                if (Program.ViewTaskRunFlag)
                     Program._T("Vision::TaskRun");
                 // if navigating just keep an eye out for cone
                 // if searching
