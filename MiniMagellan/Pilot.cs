@@ -95,8 +95,20 @@ namespace MiniMagellan
             {
                 case "robot1":
                     string j = Encoding.UTF8.GetString(e.Message);
+                    dynamic jsn = null;
                     if (OnPilotReceive != null)
-                        OnPilotReceive(JsonConvert.DeserializeObject(j));
+                        try
+                        {
+                            jsn = JsonConvert.DeserializeObject(j);
+                        }
+                        catch (Exception ex)
+                        {
+                            Trace.WriteLine(ex.Message);
+                            Trace.WriteLine(j);
+                            return;
+                            //throw;
+                        }
+                        OnPilotReceive(jsn);
                     break;
             }
         }

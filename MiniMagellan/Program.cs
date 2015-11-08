@@ -69,7 +69,7 @@ namespace MiniMagellan
 
             Trace.WriteLine("Spiked3.com MiniMagellan Kernel - (c) 2015-2016 Mike Partain");
             // startup parms
-            string pilotString = "com15";
+            string pilotString = "192.168.42.1";
             //string pilotString = "com15";
             //string pilotString = "192.168.42.1";
             var p = new OptionSet
@@ -158,8 +158,8 @@ namespace MiniMagellan
 #else
             System.Diagnostics.Trace.WriteLine($"Listen for WayPoints", "1");
             MqttClient Mq;
-            //string broker = "192.168.42.1";
-            string broker = "127.0.0.1";
+            string broker = "192.168.42.1";
+            //string broker = "127.0.0.1";
             Mq = new MqttClient(broker);
             System.Diagnostics.Trace.WriteLine($".connecting", "1");
             Mq.Connect("MM1");
