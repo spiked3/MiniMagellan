@@ -76,7 +76,9 @@ namespace MiniMagellan
 
                     if (Program.WayPoints.Count == 0)
                     {
+                        Console.ForegroundColor = ConsoleColor.Cyan;
                         Console.WriteLine("WayPoint stack empty");
+                        Console.ForegroundColor = ConsoleColor.White;
                         Program.State = RobotState.Finished;
                         CurrentWayPoint = null;
                     }
@@ -136,7 +138,9 @@ namespace MiniMagellan
                             // obstacle!!!!!
                             Program.Pilot.Send(new { Cmd = "Mov", M1 = 0.0, M2 = 0.0 });
                             subState = NavState.Stopped;
+                            Console.ForegroundColor = ConsoleColor.Cyan;
                             Trace.WriteLine("Unexpected Bumper");
+                            Console.ForegroundColor = ConsoleColor.White;
 
                             // todo obstacle during escape
                             // save current waypoint
@@ -146,7 +150,9 @@ namespace MiniMagellan
                             EscapeWaypoint = CurrentWayPoint;
                             EscapeInProgress = true;
 
+                            Console.ForegroundColor = ConsoleColor.Yellow;
                             Trace.WriteLine("Inserting Fake Escape WayPoint");
+                            Console.ForegroundColor = ConsoleColor.White;
                             Program.WayPoints.Push(EscapeWaypoint);
 
                             Program.WayPoints.Push(new WayPoint { X = 0.0F, Y = 0.0F, isAction = true });
@@ -158,7 +164,9 @@ namespace MiniMagellan
                     case "Move":
                         if (subState == NavState.Moving && ((string)json.V).Equals("1"))
                         {
+                            Console.ForegroundColor = ConsoleColor.Cyan;
                             Trace.WriteLine("Move completed");
+                            Console.ForegroundColor = ConsoleColor.White;
                             Program.State = RobotState.Idle;
                         }
                         break;
@@ -166,19 +174,14 @@ namespace MiniMagellan
                     case "Rotate":
                         if (subState == NavState.Rotating && ((string)json.V).Equals("1"))
                         {
+                            Console.ForegroundColor = ConsoleColor.Cyan;
                             Trace.WriteLine("Rotate completed");
+                            Console.ForegroundColor = ConsoleColor.White;
                             subState = NavState.Moving;
                         }
                         break;
                 }
             }
-        }
-
-        public void Suspend(object l)
-        {
-            Trace.WriteLine($"Navigation::Suspend...");
-            Monitor.Wait(l);
-            Monitor.Exit(l);
         }
 
         public string GetStatus()

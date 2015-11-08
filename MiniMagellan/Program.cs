@@ -65,6 +65,7 @@ namespace MiniMagellan
 
         void Main1(string[] args)
         {
+            Console.ForegroundColor = ConsoleColor.White;
             Trace.Listeners.Add(this);
 
             Trace.WriteLine("Spiked3.com MiniMagellan Kernel - (c) 2015-2016 Mike Partain");
@@ -110,15 +111,15 @@ namespace MiniMagellan
                         ViewStatus();
                         break;
                     case 5:
-                        Trace.Write(">#> ");
+                        Trace.Write(">#");
                         Pilot.Serial_OnReceive(new { T = "Rotate", V = "1" });
                         break;
                     case 6:
-                        Trace.Write(">#> ");
+                        Trace.Write(">#");
                         Pilot.Serial_OnReceive(new { T = "Move", V = "1" });
                         break;
                     case 7:
-                        Trace.Write(">#> ");
+                        Trace.Write(">#");
                         Pilot.Serial_OnReceive(new { T = "Bumper", V = "1" });
                         break;
                 }
@@ -132,49 +133,59 @@ namespace MiniMagellan
 
         private static void ViewStatus()
         {
-            Console.WriteLine($"\nState({State}) X({X}) Y({Y}) H({H}) WayPoints({WayPoints?.Count ?? 0})");
+            var oldCursorPos = new { left = Console.CursorLeft, top = Console.CursorTop };
+            int writtenLines = 0;
+
+            Console.ForegroundColor = ConsoleColor.Yellow;
+
+            Console.WriteLine($"\nState({State}) X({X}) Y({Y}) H({H}) WayPoints({WayPoints?.Count ?? 0})"); writtenLines++;
             Ar.threadMap.All(kv => {
-                Console.WriteLine($"{kv.Value}: {kv.Key.GetStatus()}");
+                Console.WriteLine($"{kv.Value}: {kv.Key.GetStatus()}"); writtenLines++;
                 return true;
             });
-            Console.WriteLine($"Waypoints:");
+            Console.WriteLine($"Waypoints:"); writtenLines++;
             WayPoints?.All(wp => {
-                Console.WriteLine($"[{wp.X}, {wp.Y}{(wp.isAction  ? ", Action":"")}]");
+                Console.WriteLine($"[{wp.X}, {wp.Y}{(wp.isAction ? ", Action" : "")}]"); writtenLines++;
                 return true;
             });
-            Console.WriteLine();
+
+            //Console.SetCursorPosition(0, oldCursorPos.top + writtenLines);
+            Console.ForegroundColor = ConsoleColor.White;
         }
 
         void ListenWayPoints()
         {
-#if false
-            System.Diagnostics.Trace.WriteLine($"Loaded fake WayPoints", "1");
-            WayPoints = new WayPoints();
-            // add in reverse order (FILO)
-            WayPoints.Push(new WayPoint { X = 0, Y = 0, isAction = false });
-            WayPoints.Push(new WayPoint { X = 1, Y = 0, isAction = false });
-            WayPoints.Push(new WayPoint { X = 1, Y = 1, isAction = false });
-            WayPoints.Push(new WayPoint { X = 0, Y = 1, isAction = true });
-#else
-            System.Diagnostics.Trace.WriteLine($"Listen for WayPoints", "1");
+            System.Diagnostics.Trace.WriteLine($"Listen for WayPoints");
             MqttClient Mq;
             string broker = "192.168.42.1";
             //string broker = "127.0.0.1";
             Mq = new MqttClient(broker);
-            System.Diagnostics.Trace.WriteLine($".connecting", "1");
+            System.Diagnostics.Trace.WriteLine($".connecting");
             Mq.Connect("MM1");
-            System.Diagnostics.Trace.WriteLine($".Connected to MQTT @ {broker}", "1");
+            System.Diagnostics.Trace.WriteLine($".Connected to MQTT @ {broker}");
             Mq.MqttMsgPublishReceived += PublishReceived;
 
             Mq.Subscribe(new string[] { "Navplan/WayPoints" }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
 
             int n = -1;
             while (n != 0)
-                n = GetChoice(new string[] { "Exit" });
+            {
+                n = GetChoice(new string[] { "Exit", "load fake" });
+                if (n == 1)
+                {
+                    System.Diagnostics.Trace.WriteLine($"Loaded fake WayPoints");
+                    WayPoints = new WayPoints();
+                    // add in reverse order (FILO)
+                    WayPoints.Push(new WayPoint { X = 0, Y = 0, isAction = false });
+                    WayPoints.Push(new WayPoint { X = 1, Y = 0, isAction = false });
+                    WayPoints.Push(new WayPoint { X = 1, Y = 1, isAction = false });
+                    WayPoints.Push(new WayPoint { X = 0, Y = 1, isAction = true });
+
+                }
+            }
 
             Mq.Disconnect();
-            System.Diagnostics.Trace.WriteLine($".Disconnect MQTT @ {broker}", "1");
-#endif
+            System.Diagnostics.Trace.WriteLine($".Disconnect MQTT @ {broker}");
         }
 
         private void PublishReceived(object sender, MqttMsgPublishEventArgs e)
