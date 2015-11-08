@@ -26,11 +26,12 @@ namespace MiniMagellan
         DateTime Timeout;
         WayPoint CurrentWayPoint;
 
+        // todo put these in robot
         public float hdgToWayPoint
         {
             get
             {
-                float theta = (float)(Atan2((CurrentWayPoint.X - X), -(CurrentWayPoint.Y - Y)));
+                float theta = (float)(Atan2((CurrentWayPoint.X - X), -(CurrentWayPoint.Y - Y))); 
                 if ((X - CurrentWayPoint.X) < -PI)
                     theta += (float)PI;
                 return (float)(theta * DEG_PER_RAD);
@@ -78,7 +79,6 @@ namespace MiniMagellan
                         Console.WriteLine("WayPoint stack empty");
                         Program.State = RobotState.Finished;
                         CurrentWayPoint = null;
-                        continue;
                     }
                     else
                     {
@@ -104,7 +104,7 @@ namespace MiniMagellan
                             NewSpeed = 15;
                         Program.Pilot.Send(new { Cmd = "MOV", Pwr = NewSpeed, Hdg = hdgToWayPoint, Dist = DistanceToWayPoint });
                         subState = NavState.Moving;
-                        Thread.Sleep(500); // +++ temp
+                        Thread.Sleep(500);
                     }
                 }
 
@@ -117,10 +117,7 @@ namespace MiniMagellan
                     Program.Ar.LeaveBallisticSection(this);
                     CurrentWayPoint.isAction = false;
                     Program.State = RobotState.Idle;
-                    continue;
                 }
-
-                Thread.Sleep(1000 / 2);    // todo waitOne with timeout instead
             }
 
             Program.Pilot.Send(new { Cmd = "ESC", Value = 0 });
@@ -141,13 +138,17 @@ namespace MiniMagellan
                             subState = NavState.Stopped;
                             Trace.WriteLine("Unexpected Bumper");
 
+                            // todo obstacle during escape
                             // save current waypoint
-                            // push new Waypoints for avoid, then push original waypoint
+                            // re push, dont repush current if already escaping
+                            // push new Waypoint for avoid 
+
                             EscapeWaypoint = CurrentWayPoint;
                             EscapeInProgress = true;
 
                             Trace.WriteLine("Inserting Fake Escape WayPoint");
                             Program.WayPoints.Push(EscapeWaypoint);
+
                             Program.WayPoints.Push(new WayPoint { X = 0.0F, Y = 0.0F, isAction = true });
 
                             Program.State = RobotState.Idle;
