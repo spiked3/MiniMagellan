@@ -51,10 +51,14 @@ namespace MiniMagellan
         void Internal_OnPilotReceive(dynamic j)
         {
             string jsn = JsonConvert.SerializeObject(j);
-            Console.ForegroundColor = ConsoleColor.Magenta;
-            Trace.Write('>');
-            Trace.WriteLine(jsn);
-            Console.ForegroundColor = ConsoleColor.White;
+            Program.ConsoleLock(ConsoleColor.Cyan, () =>
+            {
+                if ((string)j.T != "Pose")
+                {
+                    Trace.Write('>');
+                    Trace.WriteLine(jsn);
+                }
+            });
 
             //if (simpleEventFlag)
             //    Console.WriteLine("during wait:" + j);
@@ -166,7 +170,7 @@ namespace MiniMagellan
             Console.ForegroundColor = ConsoleColor.Magenta;
             Trace.Write('<');
             Trace.WriteLine(jsn);
-            Console.ForegroundColor = ConsoleColor.White;
+            Console.ForegroundColor = ConsoleColor.Gray;
             if (Serial?.IsOpen ?? false)
                 SerialSend(jsn);
             if (Mq?.IsConnected ?? false)

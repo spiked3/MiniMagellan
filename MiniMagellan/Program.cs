@@ -13,12 +13,8 @@ using static System.Math;
 
 namespace MiniMagellan
 {
-    // todo trace incoming and outgoing pilot traffic
+    // todo trace incoming and outgoing pilot traffic to file
 
-    public struct MenuStruct
-    {
-
-    }
     public class Program : TraceListener
     {
         public enum RobotState { Init, Navigating, Searching, Action, Idle, Finished, UnExpectedBumper, Shutdown };
@@ -27,6 +23,19 @@ namespace MiniMagellan
         public static Pilot Pilot;
         public static WayPoints WayPoints;
         public static Arbitrator Ar;
+        public static bool ConsoleLockFlag;
+
+        public static void ConsoleLock(ConsoleColor c, Action a)
+        {
+            // todo make me better :(
+            while (ConsoleLockFlag)
+                System.Threading.Thread.SpinWait(10);
+            ConsoleLockFlag = true;
+            Console.ForegroundColor = c;
+            a();
+            Console.ForegroundColor = ConsoleColor.Gray;
+            ConsoleLockFlag = false;
+        }
 
         public static bool ViewTaskRunFlag = false;
 
@@ -37,12 +46,40 @@ namespace MiniMagellan
             Trace.WriteLine("::" + T);
         }
 
+        char GetCharChoice(Dictionary<char,string> choices)
+        {
+            for (;;)
+            {
+                foreach (char c in choices.Keys)
+                {
+                    ConsoleLock(ConsoleColor.White, () =>
+                    {
+                        Console.Write($"{c}) ");
+                    });
+                    ConsoleLock(ConsoleColor.Gray, () =>
+                    {
+                        Console.WriteLine($"{choices[c]}");
+                    });
+                }
+
+                var k = Console.ReadKey(true);
+                if (choices.ContainsKey(char.ToUpper(k.KeyChar)))
+                    return k.KeyChar;
+            }
+        }
+
         int GetChoice(string[] choices)
         {
             for (;;)
             {
                 int i = 0;
-                new List<string>(choices).ForEach(x => { Console.WriteLine($"{i++}) {x}"); });
+                new List<string>(choices).ForEach(x =>
+                {
+                    ConsoleLock(ConsoleColor.Gray, () =>
+                    {
+                        Console.WriteLine($"{i++}) {x}");
+                    });
+                });
                 var k = Console.ReadKey(true);
                 try
                 {
@@ -52,12 +89,6 @@ namespace MiniMagellan
             }
         }
 
-        internal static bool NextWayPoint()
-        {
-            // todo
-            return false;
-        }
-
         static void Main(string[] args)
         {
             new Program().Main1(args);
@@ -65,12 +96,12 @@ namespace MiniMagellan
 
         void Main1(string[] args)
         {
-            Console.ForegroundColor = ConsoleColor.White;
+            Console.ForegroundColor = ConsoleColor.Gray;
             Trace.Listeners.Add(this);
 
             Trace.WriteLine("Spiked3.com MiniMagellan Kernel - (c) 2015-2016 Mike Partain");
             // startup parms
-            string pilotString = "192.168.42.1";
+            string pilotString = "127.0.0.1";
             //string pilotString = "com15";
             //string pilotString = "192.168.42.1";
             var p = new OptionSet
@@ -88,47 +119,73 @@ namespace MiniMagellan
             Ar.AddBehavior("Navigation", new Navigation());
             Ar.AddBehavior("Vision", new Vision());
 
+            int telementryIdx = 0;
+
             // menu
             for (;;)
             {
-                var n = GetChoice(new string[] { "Exit",
-                    "Config/Reset", "Load WayPoints", "Start Autonomous", "State","simulate: Rotate Complete","simulate: Move Complete","simulate: Bumper Pressed" });
-                if (n == 0)
+                Dictionary<char, string> menu = new Dictionary<char, string>()
+                {
+                    { 'X', "eXit" },
+                    { 'W', "listen Waypoints" },
+                    { 'R', "config/Reset" },
+                    { 'A', "start Autonomous" },
+                    { 'S', "State" },
+                    { 'O', "*rOtate" },
+                    { 'V', "*moVe" },
+                    { 'B', "*Bumper" },
+                    { 'T', "Telementry" },
+                    { '0', "power 0" }
+                };
+
+                char n = Char.ToUpper(GetCharChoice(menu));
+
+                if (n == 'X')
                     break;
+
                 switch (n)
                 {
-                    case 1:
-                        configPilot();
-                        break;
-                    case 2:
+                    case 'W':
                         ListenWayPoints();
                         break;
-                    case 3:
+                    case 'R':
+                        configPilot();
+                        break;
+                    case 'A':
                         Trace.WriteLine("Starting autonomous");
                         State = RobotState.Idle;
                         break;
-                    case 4:
+                    case 'S':
                         ViewStatus();
                         break;
-                    case 5:
-                        Trace.Write(">#");
+                    case 'O':
+                        Trace.Write("**");
                         Pilot.Serial_OnReceive(new { T = "Rotate", V = "1" });
                         break;
-                    case 6:
-                        Trace.Write(">#");
+                    case 'V':
+                        Trace.Write("**");
                         Pilot.Serial_OnReceive(new { T = "Move", V = "1" });
                         break;
-                    case 7:
-                        Trace.Write(">#");
+                    case 'B':
+                        Trace.Write("**");
                         Pilot.Serial_OnReceive(new { T = "Bumper", V = "1" });
+                        break;
+                    case 'T':
+                        Pilot.Send(new { Cmd = "TELEM", Flag = (++telementryIdx % 5) });
+                        break;
+                    case '0': // EStop
+                        Pilot.Send(new { Cmd = "MOV", M1 = 0, M2 = 0 });
                         break;
                 }
             }
 
             Trace.WriteLine("Kernel Stopping");
+            Pilot.Close();
             State = RobotState.Shutdown;
             Pilot.Send(new { Cmd = "ESC", Value = 0 });
-            System.Threading.Thread.Sleep(500);
+            System.Threading.Thread.Sleep(1000);
+            Console.WriteLine("\nPress any key to continue");
+            Console.ReadKey();
         }
 
         private static void ViewStatus()
@@ -149,16 +206,18 @@ namespace MiniMagellan
                 return true;
             });
 
+            Console.WriteLine($"Waypoints:"); writtenLines++;
+
             //Console.SetCursorPosition(0, oldCursorPos.top + writtenLines);
-            Console.ForegroundColor = ConsoleColor.White;
+            Console.ForegroundColor = ConsoleColor.Gray;
         }
 
         void ListenWayPoints()
         {
             System.Diagnostics.Trace.WriteLine($"Listen for WayPoints");
             MqttClient Mq;
-            string broker = "192.168.42.1";
-            //string broker = "127.0.0.1";
+            //string broker = "192.168.42.1";
+            string broker = "127.0.0.1";
             Mq = new MqttClient(broker);
             System.Diagnostics.Trace.WriteLine($".connecting");
             Mq.Connect("MM1");
@@ -170,7 +229,7 @@ namespace MiniMagellan
             int n = -1;
             while (n != 0)
             {
-                n = GetChoice(new string[] { "Exit", "load fake" });
+                n = GetChoice(new string[] { "Exit", "Load fake" });
                 if (n == 1)
                 {
                     System.Diagnostics.Trace.WriteLine($"Loaded fake WayPoints");
@@ -185,7 +244,7 @@ namespace MiniMagellan
             }
 
             Mq.Disconnect();
-            System.Diagnostics.Trace.WriteLine($".Disconnect MQTT @ {broker}");
+            System.Diagnostics.Trace.WriteLine("..Disconnected MQTT");
         }
 
         private void PublishReceived(object sender, MqttMsgPublishEventArgs e)
@@ -210,7 +269,7 @@ namespace MiniMagellan
 
         static void PilotReceive(dynamic json)
         {
-            // if Bumper && !Action it is a bad thing
+            // todo if Bumper && !Action it is a bad thing
             switch ((string)json.T)
             {
                 case "Pose":

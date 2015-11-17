@@ -38,7 +38,7 @@ namespace MiniMagellan
                 // ballistic: rotate until centered, move slowly to it, limit distance
                 //    not touched ???
 
-                Thread.Sleep(1000);
+                Thread.Sleep(100);
             }
             Trace.WriteLine("Vision exiting");
         }

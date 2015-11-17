@@ -76,9 +76,11 @@ namespace MiniMagellan
 
                     if (Program.WayPoints.Count == 0)
                     {
+                        Program.Pilot.Send(new { Cmd = "MOV", M1 = 0, M2 = 0 });    // make sure we're stopped
+
                         Console.ForegroundColor = ConsoleColor.Cyan;
                         Console.WriteLine("WayPoint stack empty");
-                        Console.ForegroundColor = ConsoleColor.White;
+                        Console.ForegroundColor = ConsoleColor.Gray;
                         Program.State = RobotState.Finished;
                         CurrentWayPoint = null;
                     }
@@ -104,7 +106,10 @@ namespace MiniMagellan
                             NewSpeed = 30;
                         if (DistanceToWayPoint < 1)
                             NewSpeed = 15;
-                        Program.Pilot.Send(new { Cmd = "MOV", Pwr = NewSpeed, Hdg = hdgToWayPoint, Dist = DistanceToWayPoint });
+                        Program.ConsoleLock(ConsoleColor.Cyan, () =>
+                        {
+                            Program.Pilot.Send(new { Cmd = "MOV", Pwr = NewSpeed, Hdg = hdgToWayPoint, Dist = DistanceToWayPoint });
+                        });
                         subState = NavState.Moving;
                         Thread.Sleep(500);
                     }
@@ -138,9 +143,7 @@ namespace MiniMagellan
                             // obstacle!!!!!
                             Program.Pilot.Send(new { Cmd = "Mov", M1 = 0.0, M2 = 0.0 });
                             subState = NavState.Stopped;
-                            Console.ForegroundColor = ConsoleColor.Cyan;
-                            Trace.WriteLine("Unexpected Bumper");
-                            Console.ForegroundColor = ConsoleColor.White;
+                            Program.ConsoleLock(ConsoleColor.Red, () => { Trace.WriteLine("Unexpected Bumper"); });
 
                             // todo obstacle during escape
                             // save current waypoint
@@ -150,9 +153,8 @@ namespace MiniMagellan
                             EscapeWaypoint = CurrentWayPoint;
                             EscapeInProgress = true;
 
-                            Console.ForegroundColor = ConsoleColor.Yellow;
                             Trace.WriteLine("Inserting Fake Escape WayPoint");
-                            Console.ForegroundColor = ConsoleColor.White;
+
                             Program.WayPoints.Push(EscapeWaypoint);
 
                             Program.WayPoints.Push(new WayPoint { X = 0.0F, Y = 0.0F, isAction = true });
@@ -164,9 +166,7 @@ namespace MiniMagellan
                     case "Move":
                         if (subState == NavState.Moving && ((string)json.V).Equals("1"))
                         {
-                            Console.ForegroundColor = ConsoleColor.Cyan;
-                            Trace.WriteLine("Move completed");
-                            Console.ForegroundColor = ConsoleColor.White;
+                            Program.ConsoleLock(ConsoleColor.Green, () => { Trace.WriteLine("Move completed"); });
                             Program.State = RobotState.Idle;
                         }
                         break;
@@ -174,9 +174,7 @@ namespace MiniMagellan
                     case "Rotate":
                         if (subState == NavState.Rotating && ((string)json.V).Equals("1"))
                         {
-                            Console.ForegroundColor = ConsoleColor.Cyan;
-                            Trace.WriteLine("Rotate completed");
-                            Console.ForegroundColor = ConsoleColor.White;
+                            Program.ConsoleLock(ConsoleColor.Green, () => { Trace.WriteLine("Rotate completed"); });
                             subState = NavState.Moving;
                         }
                         break;
