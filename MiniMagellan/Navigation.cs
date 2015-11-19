@@ -31,7 +31,7 @@ namespace MiniMagellan
         {
             get
             {
-                float theta = (float)(Atan2((CurrentWayPoint.X - X), -(CurrentWayPoint.Y - Y))); 
+                float theta = (float)(Atan2((CurrentWayPoint.X - X), -(CurrentWayPoint.Y - Y)));
                 if ((X - CurrentWayPoint.X) < -PI)
                     theta += (float)PI;
                 return (float)(theta * DEG_PER_RAD);
@@ -89,11 +89,14 @@ namespace MiniMagellan
                         CurrentWayPoint = Program.WayPoints.Pop();
                         if (EscapeInProgress && CurrentWayPoint == EscapeWaypoint)
                             EscapeInProgress = false;
-                        subState = NavState.Rotating;
-                        Program.State = RobotState.Navigating;
-                        Timeout = DateTime.Now + rotateTimeout;
-                        Program.Pilot.Send(new { Cmd = "ROT", Hdg = hdgToWayPoint });
-                        subState = NavState.Rotating;
+                        //if (DistanceToWayPoint > .2)
+                        {
+                            subState = NavState.Rotating;
+                            Program.State = RobotState.Navigating;
+                            Timeout = DateTime.Now + rotateTimeout;
+                            Program.Pilot.Send(new { Cmd = "ROT", Hdg = hdgToWayPoint });
+                            subState = NavState.Rotating;
+                        //}
                     }
                 }
 
@@ -101,11 +104,11 @@ namespace MiniMagellan
                 {
                     if (subState == NavState.Moving)
                     {
-                        var NewSpeed = 50;
+                        var NewSpeed = 80;
                         if (DistanceToWayPoint < 5)
-                            NewSpeed = 30;
+                            NewSpeed = 50;
                         if (DistanceToWayPoint < 1)
-                            NewSpeed = 15;
+                            NewSpeed = 30;
                         Program.ConsoleLock(ConsoleColor.Cyan, () =>
                         {
                             Program.Pilot.Send(new { Cmd = "MOV", Pwr = NewSpeed, Hdg = hdgToWayPoint, Dist = DistanceToWayPoint });

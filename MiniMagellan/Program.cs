@@ -14,6 +14,7 @@ using static System.Math;
 namespace MiniMagellan
 {
     // todo trace incoming and outgoing pilot traffic to file
+    // todo better eStop
 
     public class Program : TraceListener
     {
@@ -101,9 +102,9 @@ namespace MiniMagellan
 
             Trace.WriteLine("Spiked3.com MiniMagellan Kernel - (c) 2015-2016 Mike Partain");
             // startup parms
-            string pilotString = "127.0.0.1";
+            //string pilotString = "127.0.0.1";
             //string pilotString = "com15";
-            //string pilotString = "192.168.42.1";
+            string pilotString = "192.168.42.1";
             var p = new OptionSet
             { { "pilot=", (v) => { pilotString = v; } } };
             p.Parse(Environment.GetCommandLineArgs());
@@ -112,7 +113,6 @@ namespace MiniMagellan
             Pilot = Pilot.Factory(pilotString);
             Pilot.OnPilotReceive += PilotReceive;
 
-            // arbiter
             Ar = new Arbitrator();
 
             // add behaviors
@@ -216,8 +216,8 @@ namespace MiniMagellan
         {
             System.Diagnostics.Trace.WriteLine($"Listen for WayPoints");
             MqttClient Mq;
-            //string broker = "192.168.42.1";
-            string broker = "127.0.0.1";
+            string broker = "192.168.42.1";
+            //string broker = "127.0.0.1";
             Mq = new MqttClient(broker);
             System.Diagnostics.Trace.WriteLine($".connecting");
             Mq.Connect("MM1");
@@ -236,10 +236,7 @@ namespace MiniMagellan
                     WayPoints = new WayPoints();
                     // add in reverse order (FILO)
                     WayPoints.Push(new WayPoint { X = 0, Y = 0, isAction = false });
-                    WayPoints.Push(new WayPoint { X = 1, Y = 0, isAction = false });
-                    WayPoints.Push(new WayPoint { X = 1, Y = 1, isAction = false });
-                    WayPoints.Push(new WayPoint { X = 0, Y = 1, isAction = true });
-
+                    WayPoints.Push(new WayPoint { X = 0, Y = 1, isAction = false });
                 }
             }
 
