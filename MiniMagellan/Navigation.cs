@@ -31,9 +31,7 @@ namespace MiniMagellan
         {
             get
             {
-                float theta = (float)(Atan2((CurrentWayPoint.X - X), -(CurrentWayPoint.Y - Y)));
-                if ((X - CurrentWayPoint.X) < -PI)
-                    theta += (float)PI;
+                float theta = (float)(Atan2(-(Y - CurrentWayPoint.Y), X - CurrentWayPoint.X));
                 return (float)(theta * DEG_PER_RAD);
             }
         }
@@ -90,48 +88,48 @@ namespace MiniMagellan
                         if (EscapeInProgress && CurrentWayPoint == EscapeWaypoint)
                             EscapeInProgress = false;
                         //if (DistanceToWayPoint > .2)
-                        {
+                        //{
                             subState = NavState.Rotating;
                             Program.State = RobotState.Navigating;
                             Timeout = DateTime.Now + rotateTimeout;
                             Program.Pilot.Send(new { Cmd = "ROT", Hdg = hdgToWayPoint });
                             subState = NavState.Rotating;
                         //}
+                        }
                     }
-                }
 
-                if (Program.State == RobotState.Navigating)
-                {
-                    if (subState == NavState.Moving)
+                    if (Program.State == RobotState.Navigating)
                     {
-                        var NewSpeed = 80;
-                        if (DistanceToWayPoint < 5)
-                            NewSpeed = 50;
-                        if (DistanceToWayPoint < 1)
-                            NewSpeed = 30;
-                        Program.ConsoleLock(ConsoleColor.Cyan, () =>
+                        if (subState == NavState.Moving)
                         {
-                            Program.Pilot.Send(new { Cmd = "MOV", Pwr = NewSpeed, Hdg = hdgToWayPoint, Dist = DistanceToWayPoint });
-                        });
-                        subState = NavState.Moving;
-                        Thread.Sleep(500);
+                            var NewSpeed = 80;
+                            if (DistanceToWayPoint < 5)
+                                NewSpeed = 50;
+                            if (DistanceToWayPoint < 1)
+                                NewSpeed = 30;
+                            Program.ConsoleLock(ConsoleColor.Cyan, () =>
+                            {
+                                Program.Pilot.Send(new { Cmd = "MOV", Pwr = NewSpeed, Hdg = hdgToWayPoint, Dist = DistanceToWayPoint });
+                            });
+                            subState = NavState.Moving;
+                            Thread.Sleep(500);
+                        }
+                    }
+
+                    if (Program.State == RobotState.Action)
+                    {
+                        Program.Ar.EnterBallisticSection(this);
+
+                        Thread.Sleep(1000);
+
+                        Program.Ar.LeaveBallisticSection(this);
+                        CurrentWayPoint.isAction = false;
+                        Program.State = RobotState.Idle;
                     }
                 }
 
-                if (Program.State == RobotState.Action)
-                {
-                    Program.Ar.EnterBallisticSection(this);
-
-                    Thread.Sleep(1000);
-
-                    Program.Ar.LeaveBallisticSection(this);
-                    CurrentWayPoint.isAction = false;
-                    Program.State = RobotState.Idle;
-                }
-            }
-
-            Program.Pilot.Send(new { Cmd = "ESC", Value = 0 });
-            Trace.WriteLine("Navigation exiting");
+                Program.Pilot.Send(new { Cmd = "ESC", Value = 0 });
+                Trace.WriteLine("Navigation exiting");
         }
 
         void PilotReceive(dynamic json)
