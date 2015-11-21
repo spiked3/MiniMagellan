@@ -27,9 +27,6 @@ namespace MiniMagellan
                 while (Lock)
                     Thread.SpinWait(100);
 
-                if (Program.ViewTaskRunFlag)
-                    Program._T("Vision::TaskRun");
-
                 // if navigating just keep an eye out for detect
                 // if searching
                 //     sweep servo looking, found switch to Action (ballistic) approach / touch

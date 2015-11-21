@@ -7,12 +7,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using static MiniMagellan.Program;
 using static System.Math;
+using Spiked3;
 
 namespace MiniMagellan
 {
     public class Navigation : IBehavior
     {
-        enum NavState { Rotating, Moving, Stopped };
+        enum NavState { Rotating, MoveStart, Moving, Stopped };
 
         public bool Lock { get; set; }
         NavState subState;
@@ -24,14 +25,16 @@ namespace MiniMagellan
 
         readonly TimeSpan rotateTimeout = new TimeSpan(0, 0, 15);  // seconds
         DateTime Timeout;
-        WayPoint CurrentWayPoint;
+
+        public WayPoint CurrentWayPoint;
+        public double lastHdg;
 
         // todo put these in robot
         public float hdgToWayPoint
         {
             get
             {
-                float theta = (float)(Atan2(-(Y - CurrentWayPoint.Y), X - CurrentWayPoint.X));
+                float theta = (float)(Atan2( (CurrentWayPoint.X - X), (CurrentWayPoint.Y - Y) ));
                 return (float)(theta * DEG_PER_RAD);
             }
         }
@@ -61,63 +64,69 @@ namespace MiniMagellan
                 while (Lock)
                     Thread.SpinWait(100);
 
-                if (Program.ViewTaskRunFlag)
-                    Program._T("Navigation::TaskRun");
-
-                if (Program.State == RobotState.Idle)
+                switch (Program.State)
                 {
-                    if (CurrentWayPoint?.isAction ?? false)
-                    {
-                        Program.State = RobotState.Action;
-                        continue;
-                    }
-
-                    if (Program.WayPoints.Count == 0)
-                    {
-                        Program.Pilot.Send(new { Cmd = "MOV", M1 = 0, M2 = 0 });    // make sure we're stopped
-
-                        Console.ForegroundColor = ConsoleColor.Cyan;
-                        Console.WriteLine("WayPoint stack empty");
-                        Console.ForegroundColor = ConsoleColor.Gray;
-                        Program.State = RobotState.Finished;
-                        CurrentWayPoint = null;
-                    }
-                    else
-                    {
-                        CurrentWayPoint = Program.WayPoints.Pop();
-                        if (EscapeInProgress && CurrentWayPoint == EscapeWaypoint)
-                            EscapeInProgress = false;
-                        //if (DistanceToWayPoint > .2)
-                        //{
-                            subState = NavState.Rotating;
-                            Program.State = RobotState.Navigating;
-                            Timeout = DateTime.Now + rotateTimeout;
-                            Program.Pilot.Send(new { Cmd = "ROT", Hdg = hdgToWayPoint });
-                            subState = NavState.Rotating;
-                        //}
-                        }
-                    }
-
-                    if (Program.State == RobotState.Navigating)
-                    {
-                        if (subState == NavState.Moving)
+                    case RobotState.Idle:
+                        if (CurrentWayPoint?.isAction ?? false)
                         {
-                            var NewSpeed = 80;
-                            if (DistanceToWayPoint < 5)
-                                NewSpeed = 50;
-                            if (DistanceToWayPoint < 1)
-                                NewSpeed = 30;
+                            Program.State = RobotState.Action;
+                            continue;
+                        }
+
+                        if (Program.WayPoints.Count == 0)
+                        {
+                            Program.Pilot.Send(new { Cmd = "MOV", M1 = 0, M2 = 0 });    // make sure we're stopped
+
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine("WayPoint stack empty");
+                            Console.ForegroundColor = ConsoleColor.Gray;
+                            Program.State = RobotState.Finished;
+                            CurrentWayPoint = null;
+                        }
+                        else
+                        {
+                            CurrentWayPoint = Program.WayPoints.Pop();
+                            if (EscapeInProgress && CurrentWayPoint == EscapeWaypoint)
+                                EscapeInProgress = false;
+                            Program.State = RobotState.Navigating;
+                            if (DistanceToWayPoint > .5)
+                            {
+                                subState = NavState.Rotating;
+                                Timeout = DateTime.Now + rotateTimeout;
+                                lastHdg = hdgToWayPoint;
+                                Program.Pilot.Send(new { Cmd = "ROT", Hdg = lastHdg });
+                                subState = NavState.Rotating;
+                            }
+                            else
+                            {
+                                subState = NavState.Moving;
+                            }
+                        }
+                        break;
+
+                        // todo pilot firmware change +++ affects Dave
+                        // I would prefer to not have move reset PIDs
+                        // but since they do, we need to send only once, and wait
+                        // and not try to correct heading in transit
+                    case RobotState.Navigating:
+                        if (subState == NavState.MoveStart)
+                        {
+                            var NewSpeed = 50;
+                            //if (DistanceToWayPoint < 5)
+                            //    NewSpeed = 50;
+                            //if (DistanceToWayPoint < 1)
+                            //    NewSpeed = 40;
                             Program.ConsoleLock(ConsoleColor.Cyan, () =>
                             {
-                                Program.Pilot.Send(new { Cmd = "MOV", Pwr = NewSpeed, Hdg = hdgToWayPoint, Dist = DistanceToWayPoint });
+                                lastHdg = hdgToWayPoint;
+                                Program.Pilot.Send(new { Cmd = "MOV", Pwr = NewSpeed, Hdg = lastHdg, Dist = DistanceToWayPoint });
                             });
                             subState = NavState.Moving;
                             Thread.Sleep(500);
                         }
-                    }
+                        break;
 
-                    if (Program.State == RobotState.Action)
-                    {
+                    case RobotState.Action:
                         Program.Ar.EnterBallisticSection(this);
 
                         Thread.Sleep(1000);
@@ -125,11 +134,12 @@ namespace MiniMagellan
                         Program.Ar.LeaveBallisticSection(this);
                         CurrentWayPoint.isAction = false;
                         Program.State = RobotState.Idle;
-                    }
+                        break;
                 }
+            }
 
-                Program.Pilot.Send(new { Cmd = "ESC", Value = 0 });
-                Trace.WriteLine("Navigation exiting");
+            Program.Pilot.Send(new { Cmd = "ESC", Value = 0 });
+            Trace.WriteLine("Navigation exiting");
         }
 
         void PilotReceive(dynamic json)
@@ -176,7 +186,7 @@ namespace MiniMagellan
                         if (subState == NavState.Rotating && ((string)json.V).Equals("1"))
                         {
                             Program.ConsoleLock(ConsoleColor.Green, () => { Trace.WriteLine("Rotate completed"); });
-                            subState = NavState.Moving;
+                            subState = NavState.MoveStart;
                         }
                         break;
                 }

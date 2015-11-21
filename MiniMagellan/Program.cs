@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using uPLibrary.Networking.M2Mqtt;
 using uPLibrary.Networking.M2Mqtt.Messages;
 using static System.Math;
+using Spiked3;
 
 namespace MiniMagellan
 {
@@ -37,8 +38,6 @@ namespace MiniMagellan
             Console.ForegroundColor = ConsoleColor.Gray;
             ConsoleLockFlag = false;
         }
-
-        public static bool ViewTaskRunFlag = false;
 
         public static float ResetHeading { get; private set; }
 
@@ -116,7 +115,8 @@ namespace MiniMagellan
             Ar = new Arbitrator();
 
             // add behaviors
-            Ar.AddBehavior("Navigation", new Navigation());
+            Navigation Nav = new Navigation();
+            Ar.AddBehavior("Navigation", Nav);
             Ar.AddBehavior("Vision", new Vision());
 
             int telementryIdx = 0;
@@ -160,6 +160,9 @@ namespace MiniMagellan
                         break;
                     case 'O':
                         Trace.Write("**");
+                        X = Nav.CurrentWayPoint.X;
+                        Y = Nav.CurrentWayPoint.Y;
+                        H = (float)Nav.lastHdg;
                         Pilot.Serial_OnReceive(new { T = "Rotate", V = "1" });
                         break;
                     case 'V':
@@ -214,14 +217,14 @@ namespace MiniMagellan
 
         void ListenWayPoints()
         {
-            System.Diagnostics.Trace.WriteLine($"Listen for WayPoints");
+            Trace.WriteLine($"Listen for WayPoints");
             MqttClient Mq;
             string broker = "192.168.42.1";
             //string broker = "127.0.0.1";
             Mq = new MqttClient(broker);
-            System.Diagnostics.Trace.WriteLine($".connecting");
+            Trace.WriteLine($".connecting");
             Mq.Connect("MM1");
-            System.Diagnostics.Trace.WriteLine($".Connected to MQTT @ {broker}");
+            Trace.WriteLine($".Connected to MQTT @ {broker}");
             Mq.MqttMsgPublishReceived += PublishReceived;
 
             Mq.Subscribe(new string[] { "Navplan/WayPoints" }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
@@ -232,16 +235,20 @@ namespace MiniMagellan
                 n = GetChoice(new string[] { "Exit", "Load fake" });
                 if (n == 1)
                 {
-                    System.Diagnostics.Trace.WriteLine($"Loaded fake WayPoints");
+                    // {"ResetHdg":0,"WayPoints":[[0, 1, 0],[1, 1, 0],[0, 1, 0],[0, 0, 0]]}
+
+                    Trace.WriteLine($"Loaded fake WayPoints");
                     WayPoints = new WayPoints();
                     // add in reverse order (FILO)
                     WayPoints.Push(new WayPoint { X = 0, Y = 0, isAction = false });
+                    WayPoints.Push(new WayPoint { X = 0, Y = 1, isAction = false });
+                    WayPoints.Push(new WayPoint { X = 1, Y = 1, isAction = false });
                     WayPoints.Push(new WayPoint { X = 0, Y = 1, isAction = false });
                 }
             }
 
             Mq.Disconnect();
-            System.Diagnostics.Trace.WriteLine("..Disconnected MQTT");
+            Trace.WriteLine("..Disconnected MQTT");
         }
 
         private void PublishReceived(object sender, MqttMsgPublishEventArgs e)
@@ -262,6 +269,7 @@ namespace MiniMagellan
             Pilot.Send(new { Cmd = "CONFIG", TPM = 336, MMX = 450, StrRv = -1 });
             Pilot.Send(new { Cmd = "CONFIG", M1 = new int[] { 1, -1 }, M2 = new int[] { -1, 1 } });
             Pilot.Send(new { Cmd = "RESET", Hdg = ResetHeading });
+            Pilot.Send(new { Cmd = "ESC", Value = 1 });
         }
 
         static void PilotReceive(dynamic json)
