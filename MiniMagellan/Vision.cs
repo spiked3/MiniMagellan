@@ -5,7 +5,6 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using static MiniMagellan.Program;
 
 namespace MiniMagellan
 {
@@ -22,7 +21,7 @@ namespace MiniMagellan
         public void TaskRun()
         {
             // if finished, exit task
-            while (Program.State != RobotState.Shutdown)
+            while (Program.State != Program.RobotState.Shutdown)
             {
                 while (Lock)
                     Thread.SpinWait(100);
@@ -42,7 +41,7 @@ namespace MiniMagellan
 
         public string GetStatus()
         {
-            return ($"Undefined");
+            return ("Undefined");
         }
     }
 }

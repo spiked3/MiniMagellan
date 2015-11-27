@@ -9,7 +9,7 @@ using System.Text;
 using System.Threading.Tasks;
 using uPLibrary.Networking.M2Mqtt;
 using uPLibrary.Networking.M2Mqtt.Messages;
-using static System.Math;
+//using static System.Math;
 using Spiked3;
 
 namespace MiniMagellan
@@ -59,11 +59,11 @@ namespace MiniMagellan
                 {
                     ConsoleLock(ConsoleColor.White, () =>
                     {
-                        Console.Write($"{c}) ");
+                        Console.Write(string.Format("{0}) ",c));
                     });
                     ConsoleLock(ConsoleColor.Gray, () =>
                     {
-                        Console.WriteLine($"{choices[c]}");
+                        Console.WriteLine(string.Format("{0}",choices[c]));
                     });
                 }
 
@@ -82,7 +82,7 @@ namespace MiniMagellan
                 {
                     ConsoleLock(ConsoleColor.Gray, () =>
                     {
-                        Console.WriteLine($"{i++}) {x}");
+                        Console.WriteLine(string.Format("{0}) {1}",i++,x));
                     });
                 });
                 var k = Console.ReadKey(true);
@@ -200,18 +200,25 @@ namespace MiniMagellan
 
             Console.ForegroundColor = ConsoleColor.Yellow;
 
-            Console.WriteLine($"\nState({State}) X({X}) Y({Y}) H({H}) WayPoints({WayPoints?.Count ?? 0})"); writtenLines++;
+            Console.WriteLine(string.Format("\nState({0}) X({1}) Y({2}) H({3}) WayPoints({4})",
+                State, X, Y, H, (WayPoints != null ? WayPoints.Count.ToString() : "NA") ));
+            writtenLines++;
             Ar.threadMap.All(kv => {
-                Console.WriteLine($"{kv.Value}: {kv.Key.GetStatus()}"); writtenLines++;
+                Console.WriteLine(string.Format("{0}: {1}", kv.Value, kv.Key.GetStatus()));
+                writtenLines++;
                 return true;
             });
-            Console.WriteLine($"Waypoints:"); writtenLines++;
-            WayPoints?.All(wp => {
-                Console.WriteLine($"[{wp.X}, {wp.Y}{(wp.isAction ? ", Action" : "")}]"); writtenLines++;
-                return true;
-            });
+            Console.WriteLine("Waypoints:"); writtenLines++;
+            if (WayPoints != null)
+            {
+                WayPoints.All(wp => {
+                    Console.WriteLine(string.Format("[{0}, {1}{2}]", wp.X, wp.Y, (wp.isAction ? ", Action" : "")));
+                    writtenLines++;
+                    return true;
+                });
+            }
 
-            Console.WriteLine($"Waypoints:"); writtenLines++;
+            Console.WriteLine("Waypoints:"); writtenLines++;
 
             //Console.SetCursorPosition(0, oldCursorPos.top + writtenLines);
             Console.ForegroundColor = ConsoleColor.Gray;
@@ -219,12 +226,12 @@ namespace MiniMagellan
 
         void ListenWayPoints()
         {
-            Trace.WriteLine($"Listen for WayPoints");
+            Trace.WriteLine("Listen for WayPoints");
             MqttClient Mq;
             Mq = new MqttClient(BrokerString);
-            Trace.WriteLine($".connecting");
+            Trace.WriteLine(".connecting");
             Mq.Connect("MM1");
-            Trace.WriteLine($".Connected to MQTT @ {BrokerString}");
+            Trace.WriteLine(string.Format(".Connected to MQTT @ {0}",BrokerString));
             Mq.MqttMsgPublishReceived += PublishReceived;
 
             Mq.Subscribe(new string[] { "Navplan/WayPoints" }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
@@ -237,7 +244,7 @@ namespace MiniMagellan
                 {
                     // {"ResetHdg":0,"WayPoints":[[0, 1, 0],[1, 1, 0],[0, 1, 0],[0, 0, 0]]}
 
-                    Trace.WriteLine($"Loaded fake WayPoints");
+                    Trace.WriteLine("Loaded fake WayPoints");
                     WayPoints = new WayPoints();
                     // add in reverse order (FILO)
                     WayPoints.Push(new WayPoint { X = 0, Y = 0, isAction = false });
@@ -261,7 +268,7 @@ namespace MiniMagellan
             Program.WayPoints = new WayPoints();
             for (int i = wps.Count - 1; i >= 0; i--)
                 Program.WayPoints.Push(wps[i]);
-            Console.WriteLine($"WayPoint received and loaded");
+            Console.WriteLine("WayPoint received and loaded");
         }
 
         static void configPilot()

@@ -35,12 +35,12 @@ namespace Spiked3
             if (t.Contains("com") || t.Contains("USB"))
             {
                 _theInstance.SerialOpen(t);  // todo verify serial port is a pilot
-                _theInstance.CommStatus = $"{_theInstance.Serial.PortName} opened";
+                _theInstance.CommStatus = string.Format("{0} opened",_theInstance.Serial.PortName);
             }
             else
             {
                 _theInstance.MqttOpen(t);
-                _theInstance.CommStatus = $"Mqtt ({t}) connected";
+                _theInstance.CommStatus = string.Format("Mqtt ({0}) connected",t);
             }
 
             _theInstance.OnPilotReceive += _theInstance.Internal_OnPilotReceive;
@@ -83,7 +83,7 @@ namespace Spiked3
                 Debugger.Break();
                 throw;
             }
-            Trace.WriteLine($"Connected to MQTT @ {c}", "1");
+            Trace.WriteLine(string.Format("Connected to MQTT @ {0}", c));
             Mq.Subscribe(new string[] { "robot1/#" }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
         }
 
@@ -128,7 +128,7 @@ namespace Spiked3
                 Debugger.Break();
                 Trace.WriteLine(ex.Message);
             }
-            Trace.WriteLine($"Serial opened({Serial.IsOpen}) on {Serial.PortName}", "2");
+            Trace.WriteLine(string.Format("Serial opened({0}) on {1}",Serial.IsOpen, Serial.PortName));
         }
 
         public void Serial_OnReceive(dynamic json)
@@ -139,7 +139,7 @@ namespace Spiked3
 
         void SerialSend(string t)
         {
-            if (Serial?.IsOpen ?? false)
+            if (Serial != null && Serial.IsOpen)
             {
                 Trace.WriteLine("com<-" + t);
                 Serial.WriteLine(t);
@@ -153,9 +153,9 @@ namespace Spiked3
             Trace.WriteLine("j->" + jsn);
             return;
 #endif
-            if (Serial?.IsOpen ?? false)
+            if (Serial != null && Serial.IsOpen)
                 SerialSend(jsn);
-            if (Mq?.IsConnected ?? false)
+            if (Mq != null && Mq.IsConnected)
                 Mq.Publish("robot1/Cmd", UTF8Encoding.ASCII.GetBytes(jsn));
         }
 
@@ -169,9 +169,9 @@ namespace Spiked3
             {
             }
 
-            if (Serial?.IsOpen ?? false)
+            if (Serial != null && Serial.IsOpen)
                 Serial.Close();
-            if (Mq?.IsConnected ?? false)
+            if (Mq != null && Mq.IsConnected)
                 MqttClose();
         }
 

@@ -5,8 +5,8 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using static MiniMagellan.Program;
-using static System.Math;
+//using MiniMagellan.Program;
+//using System.Math;
 using Spiked3;
 
 namespace MiniMagellan
@@ -21,7 +21,7 @@ namespace MiniMagellan
         bool EscapeInProgress = false;
         WayPoint EscapeWaypoint;
 
-        readonly double DEG_PER_RAD = 180 / PI;
+        readonly double DEG_PER_RAD = 180 / Math.PI;
 
         readonly TimeSpan rotateTimeout = new TimeSpan(0, 0, 15);  // seconds
         DateTime Timeout;
@@ -34,7 +34,7 @@ namespace MiniMagellan
         {
             get
             {
-                float theta = (float)(Atan2( (CurrentWayPoint.X - X), (CurrentWayPoint.Y - Y) ));
+                float theta = (float)(Math.Atan2((CurrentWayPoint.X - Program.X), (CurrentWayPoint.Y - Program.Y) ));
                 return (float)(theta * DEG_PER_RAD);
             }
         }
@@ -42,9 +42,9 @@ namespace MiniMagellan
         {
             get
             {
-                var a = CurrentWayPoint.X - X;
-                var b = CurrentWayPoint.Y - Y;
-                float d = (float)Sqrt(a * a + b * b);
+                var a = CurrentWayPoint.X - Program.X;
+                var b = CurrentWayPoint.Y - Program.Y;
+                float d = (float)Math.Sqrt(a * a + b * b);
                 return d;
             }
         }
@@ -59,17 +59,17 @@ namespace MiniMagellan
             Program.Pilot.Send(new { Cmd = "ESC", Value = 1 });
 
             // if finished, exit task
-            while (Program.State != RobotState.Shutdown)
+            while (Program.State != Program.RobotState.Shutdown)
             {
                 while (Lock)
                     Thread.SpinWait(100);
 
                 switch (Program.State)
                 {
-                    case RobotState.Idle:
-                        if (CurrentWayPoint?.isAction ?? false)
+                    case Program.RobotState.Idle:
+                        if (CurrentWayPoint.isAction)
                         {
-                            Program.State = RobotState.Action;
+                            Program.State = Program.RobotState.Action;
                             continue;
                         }
 
@@ -80,7 +80,7 @@ namespace MiniMagellan
                             Console.ForegroundColor = ConsoleColor.Cyan;
                             Console.WriteLine("WayPoint stack empty");
                             Console.ForegroundColor = ConsoleColor.Gray;
-                            Program.State = RobotState.Finished;
+                            Program.State = Program.RobotState.Finished;
                             CurrentWayPoint = null;
                         }
                         else
@@ -88,7 +88,7 @@ namespace MiniMagellan
                             CurrentWayPoint = Program.WayPoints.Pop();
                             if (EscapeInProgress && CurrentWayPoint == EscapeWaypoint)
                                 EscapeInProgress = false;
-                            Program.State = RobotState.Navigating;
+                            Program.State = Program.RobotState.Navigating;
                             if (DistanceToWayPoint > .5)
                             {
                                 subState = NavState.Rotating;
@@ -108,7 +108,7 @@ namespace MiniMagellan
                         // I would prefer to not have move reset PIDs
                         // but since they do, we need to send only once, and wait
                         // and not try to correct heading in transit
-                    case RobotState.Navigating:
+                    case Program.RobotState.Navigating:
                         if (subState == NavState.MoveStart)
                         {
                             var NewSpeed = 50;
@@ -126,14 +126,14 @@ namespace MiniMagellan
                         }
                         break;
 
-                    case RobotState.Action:
+                    case Program.RobotState.Action:
                         Program.Ar.EnterBallisticSection(this);
 
                         Thread.Sleep(1000);
 
                         Program.Ar.LeaveBallisticSection(this);
                         CurrentWayPoint.isAction = false;
-                        Program.State = RobotState.Idle;
+                        Program.State = Program.RobotState.Idle;
                         break;
                 }
             }
@@ -144,7 +144,7 @@ namespace MiniMagellan
 
         void PilotReceive(dynamic json)
         {
-            if (Program.State == RobotState.Navigating)
+            if (Program.State == Program.RobotState.Navigating)
             {
                 switch ((string)json.T)
                 {
@@ -170,7 +170,7 @@ namespace MiniMagellan
 
                             Program.WayPoints.Push(new WayPoint { X = 0.0F, Y = 0.0F, isAction = true });
 
-                            Program.State = RobotState.Idle;
+                            Program.State = Program.RobotState.Idle;
                         }
                         break;
 
@@ -178,7 +178,7 @@ namespace MiniMagellan
                         if (subState == NavState.Moving && ((string)json.V).Equals("1"))
                         {
                             Program.ConsoleLock(ConsoleColor.Green, () => { Trace.WriteLine("Move completed"); });
-                            Program.State = RobotState.Idle;
+                            Program.State = Program.RobotState.Idle;
                         }
                         break;
 
@@ -197,7 +197,8 @@ namespace MiniMagellan
         {
             return CurrentWayPoint == null ?
             "No Waypoint" :
-            $"CurrentWayPoint({CurrentWayPoint?.X ?? float.NaN:F2},{CurrentWayPoint?.Y ?? float.NaN:F2})\nHeadingToWp({hdgToWayPoint})\nDistanceToWp({DistanceToWayPoint})\nEscapeInProgress({EscapeInProgress})";
+            string.Format("CurrentWayPoint({0:F2},{1:F2})\nHeadingToWp({2})\nDistanceToWp({3})\nEscapeInProgress({4})",
+            CurrentWayPoint.X, CurrentWayPoint.Y, hdgToWayPoint, DistanceToWayPoint, EscapeInProgress );
         }
     }
 }

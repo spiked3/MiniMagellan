@@ -25,12 +25,12 @@ namespace MiniMagellan
             idMap.Add(id, b);
 
             t.Start();
-            Trace.WriteLine($"Behavior {id} started");
+            Trace.WriteLine(string.Format("Behavior {0} started", id));
         }
 
         internal void RemoveBehavior(string id)
         {
-            Trace.WriteLine($"RemoveBehavior {id}");
+            Trace.WriteLine(string.Format("RemoveBehavior {0}", id));
             IBehavior b = idMap[id];
             behaviorMap[b].Abort();
             idMap.Remove(id);
@@ -41,7 +41,7 @@ namespace MiniMagellan
         internal void RemoveBehavior(IBehavior b)
         {
             var id = threadMap[b];
-            Trace.WriteLine($"RemoveBehavior {id}");
+            Trace.WriteLine(string.Format("RemoveBehavior {0}", id));
             behaviorMap[b].Abort();
             idMap.Remove(id);
             behaviorMap.Remove(b);
@@ -50,14 +50,14 @@ namespace MiniMagellan
 
         internal void Pause()
         {
-            Trace.WriteLine($"Arbitrator pause");
+            Trace.WriteLine("Arbitrator pause");
             foreach (IBehavior b in behaviorMap.Keys)
                 b.Lock = true;
         }
 
         internal void EnterBallisticSection(IBehavior b)
         {
-            Trace.WriteLine($"{threadMap[b]} entered ballistic section...");
+            Trace.WriteLine(string.Format("{0} entered ballistic section...",threadMap[b]));
             foreach (IBehavior ib in behaviorMap.Keys)
                 if (ib != b)
                     b.Lock = true;
@@ -65,7 +65,7 @@ namespace MiniMagellan
 
         internal void LeaveBallisticSection(IBehavior b)
         {
-            Trace.WriteLine($"...finished ballistic section");
+            Trace.WriteLine("...finished ballistic section");
             foreach (IBehavior ib in behaviorMap.Keys)
                 b.Lock = false;
         }
