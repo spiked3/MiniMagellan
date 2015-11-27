@@ -27,6 +27,11 @@ namespace MiniMagellan
         public static Arbitrator Ar;
         public static bool ConsoleLockFlag;
 
+        //string BrokerString = "127.0.0.1";
+        //string BrokerString = "com15";
+        string BrokerString = "192.168.42.1";
+
+
         public static void ConsoleLock(ConsoleColor c, Action a)
         {
             // todo make me better :(
@@ -101,15 +106,12 @@ namespace MiniMagellan
 
             Trace.WriteLine("Spiked3.com MiniMagellan Kernel - (c) 2015-2016 Mike Partain");
             // startup parms
-            //string pilotString = "127.0.0.1";
-            //string pilotString = "com15";
-            string pilotString = "192.168.42.1";
             var p = new OptionSet
-            { { "pilot=", (v) => { pilotString = v; } } };
+            { { "mqtt=", (v) => { BrokerString = v; } } };
             p.Parse(Environment.GetCommandLineArgs());
 
             // pilot, listen for events
-            Pilot = Pilot.Factory(pilotString);
+            Pilot = Pilot.Factory(BrokerString);
             Pilot.OnPilotReceive += PilotReceive;
 
             Ar = new Arbitrator();
@@ -219,12 +221,10 @@ namespace MiniMagellan
         {
             Trace.WriteLine($"Listen for WayPoints");
             MqttClient Mq;
-            string broker = "192.168.42.1";
-            //string broker = "127.0.0.1";
-            Mq = new MqttClient(broker);
+            Mq = new MqttClient(BrokerString);
             Trace.WriteLine($".connecting");
             Mq.Connect("MM1");
-            Trace.WriteLine($".Connected to MQTT @ {broker}");
+            Trace.WriteLine($".Connected to MQTT @ {BrokerString}");
             Mq.MqttMsgPublishReceived += PublishReceived;
 
             Mq.Subscribe(new string[] { "Navplan/WayPoints" }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
