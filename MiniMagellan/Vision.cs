@@ -5,7 +5,6 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using static MiniMagellan.Program;
 
 namespace MiniMagellan
 {
@@ -37,12 +36,12 @@ namespace MiniMagellan
 
                 Thread.Sleep(100);
             }
-            Trace.WriteLine("Vision exiting");
+            xCon.WriteLine("^wVision exiting");
         }
 
         public string GetStatus()
         {
-            return ($"Undefined");
+            return ("^wUndefined");
         }
     }
 }

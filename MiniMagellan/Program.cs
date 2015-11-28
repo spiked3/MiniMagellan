@@ -9,40 +9,28 @@ using System.Text;
 using System.Threading.Tasks;
 using uPLibrary.Networking.M2Mqtt;
 using uPLibrary.Networking.M2Mqtt.Messages;
-using static System.Math;
 using Spiked3;
 
 namespace MiniMagellan
 {
+    public enum RobotState { Init, Navigating, Searching, Action, Idle, Finished, UnExpectedBumper, Shutdown };
+
     // todo trace incoming and outgoing pilot traffic to file
-    // todo better eStop
 
     public class Program : TraceListener
     {
-        public enum RobotState { Init, Navigating, Searching, Action, Idle, Finished, UnExpectedBumper, Shutdown };
         public static RobotState State = RobotState.Init;
         public static float X, Y, H;
         public static Pilot Pilot;
         public static WayPoints WayPoints;
         public static Arbitrator Ar;
-        public static bool ConsoleLockFlag;
 
-        //string BrokerString = "127.0.0.1";
-        //string BrokerString = "com15";
-        string BrokerString = "192.168.42.1";
+        public bool ConsoleLockFlag;
+        public MqttClient Mq;
 
-
-        public static void ConsoleLock(ConsoleColor c, Action a)
-        {
-            // todo make me better :(
-            while (ConsoleLockFlag)
-                System.Threading.Thread.SpinWait(10);
-            ConsoleLockFlag = true;
-            Console.ForegroundColor = c;
-            a();
-            Console.ForegroundColor = ConsoleColor.Gray;
-            ConsoleLockFlag = false;
-        }
+        string PilotString = "localhost";
+        //string PilotString = "com15";
+        //string PilotString = "192.168.42.1";
 
         public static float ResetHeading { get; private set; }
 
@@ -51,48 +39,34 @@ namespace MiniMagellan
             Trace.WriteLine("::" + T);
         }
 
-        char GetCharChoice(Dictionary<char,string> choices)
+        char GetCharChoice(Dictionary<char, string> choices)
         {
+            lock (xCon.consoleLock)
+                xCon.WriteLine(null);
             for (;;)
             {
                 foreach (char c in choices.Keys)
                 {
-                    ConsoleLock(ConsoleColor.White, () =>
-                    {
-                        Console.Write($"{c}) ");
-                    });
-                    ConsoleLock(ConsoleColor.Gray, () =>
-                    {
-                        Console.WriteLine($"{choices[c]}");
-                    });
+                    lock (xCon.consoleLock)
+                        xCon.Write(string.Format("^g{0}) ^!{1}\n", c, choices[c]));
                 }
 
-                var k = Console.ReadKey(true);
+                while (!Console.KeyAvailable)
+                    System.Threading.Thread.Sleep(200);
+
+                var k = Console.ReadKey(false);
+
+                if (k.Key == ConsoleKey.Escape)
+                    return (char)0;
+
                 if (choices.ContainsKey(char.ToUpper(k.KeyChar)))
                     return k.KeyChar;
             }
         }
 
-        int GetChoice(string[] choices)
-        {
-            for (;;)
-            {
-                int i = 0;
-                new List<string>(choices).ForEach(x =>
-                {
-                    ConsoleLock(ConsoleColor.Gray, () =>
-                    {
-                        Console.WriteLine($"{i++}) {x}");
-                    });
-                });
-                var k = Console.ReadKey(true);
-                try
-                {
-                    return int.Parse(new string(k.KeyChar, 1));
-                }
-                catch (Exception) { }
-            }
-        }
+        public bool Linux { get { return Environment.OSVersion.Platform == PlatformID.Unix ||
+                    Environment.OSVersion.Platform == PlatformID.MacOSX ||
+                    (int)Environment.OSVersion.Platform == 128; } }
 
         static void Main(string[] args)
         {
@@ -101,17 +75,33 @@ namespace MiniMagellan
 
         void Main1(string[] args)
         {
-            Console.ForegroundColor = ConsoleColor.Gray;
             Trace.Listeners.Add(this);
 
-            Trace.WriteLine("Spiked3.com MiniMagellan Kernel - (c) 2015-2016 Mike Partain");
+            xCon.WriteLine("*m^w   Spiked3.com MiniMagellan Kernel - (c) 2015-2016 Mike Partain   ");
+            xCon.WriteLine("*w^z  \\^c || break to stop  ");
+
+#if __MonoCS__
+            xCon.Write("Mono / ");
+#else
+            xCon.Write(".Net / ");
+
+#endif
+            if (Linux)
+                xCon.WriteLine("Unix");
+            else
+                xCon.WriteLine("Windows");
+
+
+            Console.CancelKeyPress += Console_CancelKeyPress;
+            Console.TreatControlCAsInput = false;
+
             // startup parms
-            var p = new OptionSet
-            { { "mqtt=", (v) => { BrokerString = v; } } };
-            p.Parse(Environment.GetCommandLineArgs());
+            var parms = new OptionSet
+            { { "pilot=", (v) => { PilotString = v; } } };
+            parms.Parse(Environment.GetCommandLineArgs());
 
             // pilot, listen for events
-            Pilot = Pilot.Factory(BrokerString);
+            Pilot = Pilot.Factory(PilotString);
             Pilot.OnPilotReceive += PilotReceive;
 
             Ar = new Arbitrator();
@@ -124,131 +114,141 @@ namespace MiniMagellan
             int telementryIdx = 0;
 
             // menu
+            Dictionary<char, string> menu = new Dictionary<char, string>() {
+                    { 'W', "Waypoints (MQTT)" },
+                    { 'F', "Fake waypoints" },
+                    { 'R', "Config/Reset" },
+                    { 'Z', "Close MQTT" },
+                    { 'A', "Autonomous Start" },
+                    { 'S', "State" },
+                    { 'O', ".rOtate" },
+                    { 'V', ".moVe" },
+                    { 'B', ".Bumper" },
+                    { 'T', "Telementry" },
+                    { ' ', "eStop (space bar)" } };
             for (;;)
             {
-                Dictionary<char, string> menu = new Dictionary<char, string>()
-                {
-                    { 'X', "eXit" },
-                    { 'W', "listen Waypoints" },
-                    { 'R', "config/Reset" },
-                    { 'A', "start Autonomous" },
-                    { 'S', "State" },
-                    { 'O', "*rOtate" },
-                    { 'V', "*moVe" },
-                    { 'B', "*Bumper" },
-                    { 'T', "Telementry" },
-                    { '0', "power 0" }
-                };
-
+                // use ^C to break
                 char n = Char.ToUpper(GetCharChoice(menu));
 
-                if (n == 'X')
-                    break;
+                if (State == RobotState.Shutdown)
+                    return;
 
                 switch (n)
                 {
                     case 'W':
                         ListenWayPoints();
                         break;
+                    case 'F':
+                        FakeWayPoints();
+                        break;
+                    case 'Z':
+                        CloseMqtt();
+                        break;
                     case 'R':
                         configPilot();
                         break;
                     case 'A':
-                        Trace.WriteLine("Starting autonomous");
+                        xCon.WriteLine(string.Format("^yStarting autonomous @ {0}", DateTime.Now.ToLongTimeString()));
                         State = RobotState.Idle;
                         break;
                     case 'S':
                         ViewStatus();
                         break;
                     case 'O':
-                        Trace.Write("**");
+                        xCon.Write("^c#");
                         X = Nav.CurrentWayPoint.X;
                         Y = Nav.CurrentWayPoint.Y;
                         H = (float)Nav.lastHdg;
                         Pilot.Serial_OnReceive(new { T = "Rotate", V = "1" });
                         break;
                     case 'V':
-                        Trace.Write("**");
+                        xCon.Write("^c#");
                         Pilot.Serial_OnReceive(new { T = "Move", V = "1" });
                         break;
                     case 'B':
-                        Trace.Write("**");
+                        xCon.Write("^c#");
                         Pilot.Serial_OnReceive(new { T = "Bumper", V = "1" });
                         break;
                     case 'T':
                         Pilot.Send(new { Cmd = "TELEM", Flag = (++telementryIdx % 5) });
                         break;
-                    case '0': // EStop
+                    case ' ': // EStop
                         Pilot.Send(new { Cmd = "MOV", M1 = 0, M2 = 0 });
+                        Pilot.Send(new { Cmd = "ESC", Value = 0 });
                         break;
                 }
             }
+        }
 
-            Trace.WriteLine("Kernel Stopping");
-            Pilot.Close();
+        private void Console_CancelKeyPress(object sender, ConsoleCancelEventArgs e)
+        {
+            ShutDown();
+            xCon.WriteLine("\nPress any key to continue");
+#if !__MonoCS__
+            Console.ReadKey();
+#endif
+        }
+
+        private void ShutDown()
+        {
+            xCon.WriteLine("Kernel Stopping");
             State = RobotState.Shutdown;
             Pilot.Send(new { Cmd = "ESC", Value = 0 });
-            System.Threading.Thread.Sleep(1000);
-            Console.WriteLine("\nPress any key to continue");
-            Console.ReadKey();
+            System.Threading.Thread.Sleep(500);
+            Pilot.Close();
         }
 
         private static void ViewStatus()
         {
-            var oldCursorPos = new { left = Console.CursorLeft, top = Console.CursorTop };
-            int writtenLines = 0;
-
-            Console.ForegroundColor = ConsoleColor.Yellow;
-
-            Console.WriteLine($"\nState({State}) X({X}) Y({Y}) H({H}) WayPoints({WayPoints?.Count ?? 0})"); writtenLines++;
-            Ar.threadMap.All(kv => {
-                Console.WriteLine($"{kv.Value}: {kv.Key.GetStatus()}"); writtenLines++;
-                return true;
-            });
-            Console.WriteLine($"Waypoints:"); writtenLines++;
-            WayPoints?.All(wp => {
-                Console.WriteLine($"[{wp.X}, {wp.Y}{(wp.isAction ? ", Action" : "")}]"); writtenLines++;
-                return true;
-            });
-
-            Console.WriteLine($"Waypoints:"); writtenLines++;
-
-            //Console.SetCursorPosition(0, oldCursorPos.top + writtenLines);
-            Console.ForegroundColor = ConsoleColor.Gray;
+            lock (xCon.consoleLock)
+            {
+                xCon.WriteLine(string.Format("^mState({0}) X({1:F3}) Y({2:F3}) H({3:F1}) WayPoints({4})",
+                    State, X, Y, H, WayPoints.Count));
+                Ar.threadMap.All(kv =>
+                {
+                    xCon.WriteLine(string.Format("^w{0}: {1}",kv.Value,kv.Key.GetStatus()));
+                    return true;
+                });
+                xCon.WriteLine("^mWaypoints:");
+                WayPoints.All(wp =>
+                {
+                    xCon.WriteLine(string.Format("^w[{0:F3}, {1:F3}{2}]", wp.X, wp.Y, (wp.isAction ? ", Action" : "")));
+                    return true;
+                });
+            }
         }
 
         void ListenWayPoints()
         {
-            Trace.WriteLine($"Listen for WayPoints");
-            MqttClient Mq;
-            Mq = new MqttClient(BrokerString);
-            Trace.WriteLine($".connecting");
+            xCon.WriteLine("Listen for WayPoints");
+            Mq = new MqttClient(PilotString);
+            Trace.WriteLine(".connecting");
             Mq.Connect("MM1");
-            Trace.WriteLine($".Connected to MQTT @ {BrokerString}");
+            Trace.WriteLine(string.Format(".Connected to MQTT @ {0}", PilotString));
             Mq.MqttMsgPublishReceived += PublishReceived;
-
             Mq.Subscribe(new string[] { "Navplan/WayPoints" }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
+        }
 
-            int n = -1;
-            while (n != 0)
+        void FakeWayPoints()
+        {
+            // {"ResetHdg":0,"WayPoints":[[0, 1, 0],[1, 1, 0],[0, 1, 0],[0, 0, 0]]}
+            xCon.WriteLine("^yLoaded fake WayPoints");
+            WayPoints = new WayPoints();
+            // add in reverse order (FILO)
+            WayPoints.Push(new WayPoint { X = 0, Y = 0, isAction = false });
+            WayPoints.Push(new WayPoint { X = 0, Y = 1, isAction = false });
+            WayPoints.Push(new WayPoint { X = 1, Y = 1, isAction = false });
+            WayPoints.Push(new WayPoint { X = 0, Y = 1, isAction = false });
+        }
+
+        void CloseMqtt()
+        {
+            if (Mq != null && Mq.IsConnected)
             {
-                n = GetChoice(new string[] { "Exit", "Load fake" });
-                if (n == 1)
-                {
-                    // {"ResetHdg":0,"WayPoints":[[0, 1, 0],[1, 1, 0],[0, 1, 0],[0, 0, 0]]}
-
-                    Trace.WriteLine($"Loaded fake WayPoints");
-                    WayPoints = new WayPoints();
-                    // add in reverse order (FILO)
-                    WayPoints.Push(new WayPoint { X = 0, Y = 0, isAction = false });
-                    WayPoints.Push(new WayPoint { X = 0, Y = 1, isAction = false });
-                    WayPoints.Push(new WayPoint { X = 1, Y = 1, isAction = false });
-                    WayPoints.Push(new WayPoint { X = 0, Y = 1, isAction = false });
-                }
+                Mq.Disconnect();
+                Trace.WriteLine("..Disconnected MQTT");
             }
-
-            Mq.Disconnect();
-            Trace.WriteLine("..Disconnected MQTT");
         }
 
         private void PublishReceived(object sender, MqttMsgPublishEventArgs e)
@@ -259,9 +259,9 @@ namespace MiniMagellan
             foreach (var t in jsn.WayPoints)
                 wps.Add(new WayPoint { X = t[0], Y = t[1], isAction = (int)t[2] !=0 ? true : false });
             Program.WayPoints = new WayPoints();
-            for (int i = wps.Count - 1; i >= 0; i--)
+            for (int i = wps.Count - 1; i >= 0; i--)    // pushed in reverse, FILO
                 Program.WayPoints.Push(wps[i]);
-            Console.WriteLine($"WayPoint received and loaded");
+            xCon.WriteLine("^gWayPoint received and loaded");
         }
 
         static void configPilot()
@@ -293,12 +293,12 @@ namespace MiniMagellan
 
         public override void Write(string message)
         {
-            Console.Write(message);
+            xCon.Write("^r" + message);
         }
 
         public override void WriteLine(string message)
         {
-            Console.WriteLine(message);
+            xCon.WriteLine("^r" + message);
         }
     }
 }

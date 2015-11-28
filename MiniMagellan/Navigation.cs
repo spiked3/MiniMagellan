@@ -5,8 +5,6 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using static MiniMagellan.Program;
-using static System.Math;
 using Spiked3;
 
 namespace MiniMagellan
@@ -21,7 +19,7 @@ namespace MiniMagellan
         bool EscapeInProgress = false;
         WayPoint EscapeWaypoint;
 
-        readonly double DEG_PER_RAD = 180 / PI;
+        readonly double DEG_PER_RAD = 180 / Math.PI;
 
         readonly TimeSpan rotateTimeout = new TimeSpan(0, 0, 15);  // seconds
         DateTime Timeout;
@@ -34,7 +32,7 @@ namespace MiniMagellan
         {
             get
             {
-                float theta = (float)(Atan2( (CurrentWayPoint.X - X), (CurrentWayPoint.Y - Y) ));
+                float theta = (float)(Math.Atan2( (CurrentWayPoint.X - Program.X), (CurrentWayPoint.Y - Program.Y) ));
                 return (float)(theta * DEG_PER_RAD);
             }
         }
@@ -42,9 +40,9 @@ namespace MiniMagellan
         {
             get
             {
-                var a = CurrentWayPoint.X - X;
-                var b = CurrentWayPoint.Y - Y;
-                float d = (float)Sqrt(a * a + b * b);
+                var a = CurrentWayPoint.X - Program.X;
+                var b = CurrentWayPoint.Y - Program.Y;
+                float d = (float)Math.Sqrt(a * a + b * b);
                 return d;
             }
         }
@@ -56,6 +54,8 @@ namespace MiniMagellan
 
         public void TaskRun()
         {
+            xCon.WriteLine("^wNavigation started");
+
             Program.Pilot.Send(new { Cmd = "ESC", Value = 1 });
 
             // if finished, exit task
@@ -67,19 +67,16 @@ namespace MiniMagellan
                 switch (Program.State)
                 {
                     case RobotState.Idle:
-                        if (CurrentWayPoint?.isAction ?? false)
+                        if (CurrentWayPoint != null && CurrentWayPoint.isAction)
                         {
                             Program.State = RobotState.Action;
                             continue;
                         }
 
-                        if (Program.WayPoints.Count == 0)
+                        if (Program.WayPoints == null || Program.WayPoints.Count == 0)
                         {
                             Program.Pilot.Send(new { Cmd = "MOV", M1 = 0, M2 = 0 });    // make sure we're stopped
-
-                            Console.ForegroundColor = ConsoleColor.Cyan;
-                            Console.WriteLine("WayPoint stack empty");
-                            Console.ForegroundColor = ConsoleColor.Gray;
+                            xCon.WriteLine("^yWayPoint stack empty");
                             Program.State = RobotState.Finished;
                             CurrentWayPoint = null;
                         }
@@ -116,11 +113,8 @@ namespace MiniMagellan
                             //    NewSpeed = 50;
                             //if (DistanceToWayPoint < 1)
                             //    NewSpeed = 40;
-                            Program.ConsoleLock(ConsoleColor.Cyan, () =>
-                            {
-                                lastHdg = hdgToWayPoint;
-                                Program.Pilot.Send(new { Cmd = "MOV", Pwr = NewSpeed, Hdg = lastHdg, Dist = DistanceToWayPoint });
-                            });
+                            lastHdg = hdgToWayPoint;
+                            Program.Pilot.Send(new { Cmd = "MOV", Pwr = NewSpeed, Hdg = lastHdg, Dist = DistanceToWayPoint });
                             subState = NavState.Moving;
                             Thread.Sleep(500);
                         }
@@ -139,7 +133,7 @@ namespace MiniMagellan
             }
 
             Program.Pilot.Send(new { Cmd = "ESC", Value = 0 });
-            Trace.WriteLine("Navigation exiting");
+            xCon.WriteLine("^wNavigation exiting");
         }
 
         void PilotReceive(dynamic json)
@@ -154,7 +148,7 @@ namespace MiniMagellan
                             // obstacle!!!!!
                             Program.Pilot.Send(new { Cmd = "Mov", M1 = 0.0, M2 = 0.0 });
                             subState = NavState.Stopped;
-                            Program.ConsoleLock(ConsoleColor.Red, () => { Trace.WriteLine("Unexpected Bumper"); });
+                            xCon.WriteLine("Unexpected Bumper"); 
 
                             // todo obstacle during escape
                             // save current waypoint
@@ -177,7 +171,7 @@ namespace MiniMagellan
                     case "Move":
                         if (subState == NavState.Moving && ((string)json.V).Equals("1"))
                         {
-                            Program.ConsoleLock(ConsoleColor.Green, () => { Trace.WriteLine("Move completed"); });
+                            xCon.Write("^gMove completed");
                             Program.State = RobotState.Idle;
                         }
                         break;
@@ -185,7 +179,7 @@ namespace MiniMagellan
                     case "Rotate":
                         if (subState == NavState.Rotating && ((string)json.V).Equals("1"))
                         {
-                            Program.ConsoleLock(ConsoleColor.Green, () => { Trace.WriteLine("Rotate completed"); });
+                            xCon.Write("^gRotate completed");
                             subState = NavState.MoveStart;
                         }
                         break;
@@ -197,7 +191,8 @@ namespace MiniMagellan
         {
             return CurrentWayPoint == null ?
             "No Waypoint" :
-            $"CurrentWayPoint({CurrentWayPoint?.X ?? float.NaN:F2},{CurrentWayPoint?.Y ?? float.NaN:F2})\nHeadingToWp({hdgToWayPoint})\nDistanceToWp({DistanceToWayPoint})\nEscapeInProgress({EscapeInProgress})";
+            string.Format("CurrentWayPoint({0:F1},{1:F1})\nHeadingToWp({2:F1})\nDistanceToWp({3:F3})\nEscapeInProgress({4})",
+            CurrentWayPoint.X, CurrentWayPoint.Y, hdgToWayPoint, DistanceToWayPoint, EscapeInProgress);
         }
     }
 }
