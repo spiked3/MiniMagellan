@@ -28,8 +28,9 @@ namespace MiniMagellan
         public bool ConsoleLockFlag;
         public MqttClient Mq;
 
-        string PilotString = "localhost";
+        //string PilotString = "localhost";
         //string PilotString = "com15";
+        string PilotString = "com15";
         //string PilotString = "192.168.42.1";
 
         public static float ResetHeading { get; private set; }

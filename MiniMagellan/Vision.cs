@@ -18,6 +18,14 @@ namespace MiniMagellan
 
         public bool Lock { get; set; }
 
+        enum VisionState { Casual, Focused, Found, Guiding };
+
+        VisionState SubState = VisionState.Casual;
+
+        // todo some sort of sequence map, servo values / degrees matrix thingy
+        List<int> servoValues = new List<int> { 10, 45, 90, 135, 170 };
+        int servoIdx = 2, servoStep = 1;
+
         public void TaskRun()
         {
             // if finished, exit task
@@ -33,8 +41,18 @@ namespace MiniMagellan
                 // 
                 // ballistic: rotate until centered, move slowly to it, limit distance
                 //    not touched ???
-
-                Thread.Sleep(100);
+                switch (SubState)
+                {
+                    case VisionState.Casual:
+                        Program.Pilot.Send(new { Cmd = "Srvo", Value = servoValues[servoIdx] });
+                        if (servoIdx == servoValues.Count - 1)
+                            servoStep = -1;
+                        else if (servoIdx == 0)
+                            servoStep = 1;
+                        servoIdx += servoStep;
+                        Thread.Sleep(1000);
+                        break;
+                }
             }
             xCon.WriteLine("^wVision exiting");
         }
