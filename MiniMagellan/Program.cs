@@ -26,11 +26,11 @@ namespace MiniMagellan
         public static Arbitrator Ar;
 
         public bool ConsoleLockFlag;
-        public MqttClient Mq;
+        MqttClient Mq;
 
         //string PilotString = "localhost";
         //string PilotString = "com15";
-        string PilotString = "com15";
+        public static string PilotString = "com15";
         //string PilotString = "192.168.42.1";
 
         public static float ResetHeading { get; private set; }
@@ -205,18 +205,19 @@ namespace MiniMagellan
             lock (xCon.consoleLock)
             {
                 xCon.WriteLine(string.Format("^mState({0}) X({1:F3}) Y({2:F3}) H({3:F1}) WayPoints({4})",
-                    State, X, Y, H, WayPoints.Count));
+                    State, X, Y, H, WayPoints != null ? WayPoints.Count.ToString() : "None"));
                 Ar.threadMap.All(kv =>
                 {
-                    xCon.WriteLine(string.Format("^w{0}: {1}",kv.Value,kv.Key.GetStatus()));
+                    xCon.WriteLine(string.Format("^w{0}: {1}", kv.Value, kv.Key.GetStatus()));
                     return true;
                 });
                 xCon.WriteLine("^mWaypoints:");
-                WayPoints.All(wp =>
-                {
-                    xCon.WriteLine(string.Format("^w[{0:F3}, {1:F3}{2}]", wp.X, wp.Y, (wp.isAction ? ", Action" : "")));
-                    return true;
-                });
+                if (WayPoints != null)
+                    WayPoints.All(wp =>
+                    {
+                        xCon.WriteLine(string.Format("^w[{0:F3}, {1:F3}{2}]", wp.X, wp.Y, (wp.isAction ? ", Action" : "")));
+                        return true;
+                    });
             }
         }
 

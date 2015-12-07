@@ -1,38 +1,44 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using uPLibrary.Networking.M2Mqtt;
+using uPLibrary.Networking.M2Mqtt.Messages;
 
 namespace MiniMagellan
 {
     public class Vision : IBehavior
     {
-        // kinda following how Dave did it, I think. thanks Dave.
+        MqttClient Mq;
 
         public bool Lock { get; set; }
 
-        enum VisionState { Casual, Focused, Found, FinalApproach };
+        enum VisionState { Idle, Run };
 
-        enum ServoState { Idle, SweepUp, SweepDown, IdleCentrered }
-
-        enum PixyState {  Ignore, FindMax };
-
-        double AngleOfMaxBlob;
-
-        VisionState SubState = VisionState.Casual;
-        ServoState servoState = ServoState.Idle;
-        PixyState pixyState = PixyState.Ignore;
-
-        // todo some sort of sequence map, servo values / degrees matrix thingy
-        List<int> servoValues = new List<int> { 10, 45, 90, 135, 170 };
-        int servoIdx = 2, servoStep = 1;
+        VisionState SubState = VisionState.Idle;
+        public static bool ConeConfidence = false;
 
         public void TaskRun()
         {
-            // todo mqtt subscribe to pixy
+            Program.Pilot.Send(new { Cmd = "SRVO", Value = servoPosition });
+
+            if (!Program.PilotString.Contains("com"))
+            {
+                xCon.WriteLine("Vision::Listen for Pixy");
+                Mq = new MqttClient(Program.PilotString);
+                Trace.WriteLine(".connecting");
+                Mq.Connect("MMPXY");
+                Trace.WriteLine(string.Format(".Connected to MQTT @ {0}", Program.PilotString));
+                Mq.MqttMsgPublishReceived += PixyMqRecvd;
+                Mq.Subscribe(new string[] { "robot1/pixyCam" }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
+            }
+
+            SubState = VisionState.Run;
 
             // if finished, exit task
             while (Program.State != RobotState.Shutdown)
@@ -42,56 +48,112 @@ namespace MiniMagellan
 
                 switch (SubState)
                 {
-                    case VisionState.Casual:
-                        //Program.Pilot.Send(new { Cmd = "Srvo", Value = servoValues[servoIdx] });
-                        //if (servoIdx == servoValues.Count - 1)
-                        //    servoStep = -1;
-                        //else if (servoIdx == 0)
-                        //    servoStep = 1;
-                        //servoIdx += servoStep;
-
-                        // todo what I'd like to really do is start casually sweeping when we are 
-                        // within X meters of an action waypoint
-
-                        // we need to be sure/high probability it is a cone in order to abandon waypoint navigation
-                        // otherwise we keep pixy aimed ?
-
-                        break;
-
-                    case VisionState.Focused:
-                        // todo ballistic and do a full sweep?
-                        break;
-
-                    case VisionState.Found:
-                        // todo so we take over navigation, ballistic ?
-                        break;
-
-                    case VisionState.FinalApproach:
-                        // todo used during ballistic approach
-                        // todo implement backup when bumper touched
-                        // and distance limits
+                    case VisionState.Run:
+                        // umm yeah - things kind of work in the background magically
+                        // this is just some entertainment
+                        // if (coneFlag != lastConeFlag)
+                        //    message
+                        // lastConeFlag = coneFlag
                         break;
                 }
-                Thread.Sleep(1000);     // todo faster after getting this stuff to work
-
+                Thread.Sleep(200);
             }
+
             xCon.WriteLine("^wVision exiting");
+            SubState = VisionState.Idle;
+            if (Mq != null && Mq.IsConnected)
+                Mq.Disconnect();
         }
 
-        void MqttPixyRecvd()
-        {
-            if (pixyState == PixyState.FindMax)
-                ; // todo something
-        }
+        // ##################### Pixy Blob
 
-        void HeadingToCone()
+        // working ok, probably needs tweaking to cones and sunlight
+        float kP = 0.2F, kI = 0.5F, kD = 0.01F;
+        float prevErr, integral, derivative;
+        int servoPosition = 90;
+        DateTime lastTime = DateTime.Now;
+        DateTime lostTime, foundTime;
+        enum lostNFound {  Lost, LostWait, Found };
+        lostNFound coneFlag = lostNFound.Lost;
+        TimeSpan lostWaitTime = new TimeSpan(0,0,4);    // 4 seconds
+
+        private void PixyMqRecvd(object sender, MqttMsgPublishEventArgs e)
         {
-            // todo depends on where servo found its largest blob + current Heading
+            //_T();
+            if (SubState == VisionState.Run)
+            {
+                dynamic a = JsonConvert.DeserializeObject(Encoding.UTF8.GetString(e.Message));
+                int middleX = a.X + (a.Width / 2);      // 160 is pixy center
+                DateTime nowTime = DateTime.Now;
+                float et = (nowTime - lastTime).Milliseconds / 1000F;
+                servoPosition -= (int)Pid(160, middleX, kP, kI, kD, ref prevErr, ref integral, ref derivative, et, 1);
+                xCon.WriteLine(string.Format("^wSteering srvoPosition {0} e({1:F2}) i({2}) d({3})",
+                    servoPosition, prevErr, integral, derivative));
+
+                //++ I am here - ran the battery down
+                //           
+                // lots of rects is a good indication we dont have the cone
+                // after some elapsed time of no cone, return servo to 90
+
+                if (a.Count > 2)    
+                {   // dont have cone
+                    if (coneFlag == lostNFound.LostWait)
+                    {   // we were waiting for recovery
+                        if (DateTime.Now > lostTime + lostWaitTime)
+                        {
+                            xCon.WriteLine("Cone lost");
+                            coneFlag = lostNFound.Lost;
+                            Program.Pilot.Send(new { Cmd = "SRVO", Value = 90 });
+                        }
+                    }
+                    else if (coneFlag == lostNFound.Found)
+                    { // we just lost it
+                        xCon.WriteLine("Cone lost, waiting");
+                        lostTime = nowTime;
+                        coneFlag = lostNFound.LostWait;
+                    }
+                }
+                else
+                {   // have cone
+                    if (coneFlag != lostNFound.Found)
+                    {
+                        xCon.WriteLine("Cone Found");
+                        coneFlag = lostNFound.Found;
+                        foundTime = nowTime;
+                    }
+
+                    Program.Pilot.Send(new { Cmd = "SRVO", Value = servoPosition });
+                }
+
+                lastTime = nowTime;
+            }
         }
 
         public string GetStatus()
         {
-            return ("^wUndefined");
+            string t = string.Format("{0} Servo Position({1})", Enum.GetName(typeof(VisionState), SubState), servoPosition);
+            return ("^w" + t);
+        }
+
+        public static void _T([CallerMemberName] String t = "")
+        {
+            Trace.WriteLine("::" + t);
+        }
+
+        float Pid(float setPoint, float presentValue, float Kp, float Ki, float Kd,
+            ref float previousError, ref float integral, ref float derivative, float dt, float errorSmooth)
+        {
+            float error = setPoint - presentValue;
+            error = (float)(errorSmooth * error + (1.0 - errorSmooth) * previousError);  // complimentry filter smoothing
+            integral += error * dt;
+            if (integral > 10)
+                integral = 10;
+            if (integral < -10)
+                integral = -10;
+            derivative = (error - previousError) / dt;
+            float output = Kp * error + Ki * integral + Kd * derivative;
+            previousError = error;
+            return output;
         }
     }
 }
