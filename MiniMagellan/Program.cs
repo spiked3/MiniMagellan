@@ -35,9 +35,9 @@ namespace MiniMagellan
 
         public static float ResetHeading { get; private set; }
 
-        public static void _T([CallerMemberName] String T = "")
+        public static void _T(String t)
         {
-            Trace.WriteLine("::" + T);
+            Trace.WriteLine("Program::" + t);
         }
 
         char GetCharChoice(Dictionary<char, string> choices)

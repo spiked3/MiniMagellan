@@ -134,9 +134,9 @@ namespace MiniMagellan
             return ("^w" + t);
         }
 
-        public static void _T([CallerMemberName] String t = "")
+        public static void _T(String t)
         {
-            Trace.WriteLine("::" + t);
+            Trace.WriteLine("Program::" + t);
         }
 
         float Pid(float setPoint, float presentValue, float Kp, float Ki, float Kd,
