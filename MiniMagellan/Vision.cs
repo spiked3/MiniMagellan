@@ -31,9 +31,9 @@ namespace MiniMagellan
             {
                 xCon.WriteLine("Vision::Listen for Pixy");
                 Mq = new MqttClient(Program.PilotString);
-                Trace.WriteLine(".connecting");
+                Trace.WriteLine("^y.connecting");
                 Mq.Connect("MMPXY");
-                Trace.WriteLine(string.Format(".Connected to MQTT @ {0}", Program.PilotString));
+                Trace.WriteLine(string.Format("^y.Connected to MQTT @ {0}", Program.PilotString));
                 Mq.MqttMsgPublishReceived += PixyMqRecvd;
                 Mq.Subscribe(new string[] { "robot1/pixyCam" }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
             }
@@ -49,6 +49,15 @@ namespace MiniMagellan
                 switch (SubState)
                 {
                     case VisionState.Run:
+                            if (coneFlag != lostNFound.LostWait && DateTime.Now > lastConeTime + lostWaitTime)
+                            {
+                                if (coneFlag != lostNFound.Lost)
+                                    xCon.WriteLine("^rCone lost");
+                                coneFlag = lostNFound.Lost;
+                                servoPosition = 90;
+                                Program.Pilot.Send(new { Cmd = "SRVO", Value = servoPosition });
+                            }
+
                         // umm yeah - things kind of work in the background magically
                         // this is just some entertainment
                         // if (coneFlag != lastConeFlag)
@@ -72,10 +81,10 @@ namespace MiniMagellan
         float prevErr, integral, derivative;
         int servoPosition = 90;
         DateTime lastTime = DateTime.Now;
-        DateTime lostTime, foundTime;
+        DateTime lostTime, foundTime, lastConeTime;
         enum lostNFound {  Lost, LostWait, Found };
         lostNFound coneFlag = lostNFound.Lost;
-        TimeSpan lostWaitTime = new TimeSpan(0,0,4);    // 4 seconds
+        TimeSpan lostWaitTime = new TimeSpan(0,0,2);    // 2 seconds
 
         private void PixyMqRecvd(object sender, MqttMsgPublishEventArgs e)
         {
@@ -85,30 +94,14 @@ namespace MiniMagellan
                 dynamic a = JsonConvert.DeserializeObject(Encoding.UTF8.GetString(e.Message));
                 int middleX = a.X + (a.Width / 2);      // 160 is pixy center
                 DateTime nowTime = DateTime.Now;
-                float et = (nowTime - lastTime).Milliseconds / 1000F;
-                servoPosition -= (int)Pid(160, middleX, kP, kI, kD, ref prevErr, ref integral, ref derivative, et, 1);
-                xCon.WriteLine(string.Format("^wSteering srvoPosition {0} e({1:F2}) i({2}) d({3})",
-                    servoPosition, prevErr, integral, derivative));
 
-                //++ I am here - ran the battery down
-                //           
-                // lots of rects is a good indication we dont have the cone
+                // lots or no rects is a good indication we dont have the cone
                 // after some elapsed time of no cone, return servo to 90
 
                 if (a.Count > 2)    
                 {   // dont have cone
-                    if (coneFlag == lostNFound.LostWait)
-                    {   // we were waiting for recovery
-                        if (DateTime.Now > lostTime + lostWaitTime)
-                        {
-                            xCon.WriteLine("Cone lost");
-                            coneFlag = lostNFound.Lost;
-                            Program.Pilot.Send(new { Cmd = "SRVO", Value = 90 });
-                        }
-                    }
-                    else if (coneFlag == lostNFound.Found)
+                     if (coneFlag == lostNFound.Found)
                     { // we just lost it
-                        xCon.WriteLine("Cone lost, waiting");
                         lostTime = nowTime;
                         coneFlag = lostNFound.LostWait;
                     }
@@ -117,12 +110,18 @@ namespace MiniMagellan
                 {   // have cone
                     if (coneFlag != lostNFound.Found)
                     {
-                        xCon.WriteLine("Cone Found");
+                        if (coneFlag == lostNFound.Lost)
+                            xCon.WriteLine("^gCone Found");
                         coneFlag = lostNFound.Found;
-                        foundTime = nowTime;
+                        foundTime = nowTime;                        
                     }
 
+                    float et = (nowTime - lastTime).Milliseconds / 1000F;
+                    servoPosition -= (int)Pid(160, middleX, kP, kI, kD, ref prevErr, ref integral, ref derivative, et, 1);
+                    //xCon.WriteLine(string.Format("^wSteering srvoPosition {0} e({1:F2}) i({2}) d({3})",
+                    //    servoPosition, prevErr, integral, derivative));
                     Program.Pilot.Send(new { Cmd = "SRVO", Value = servoPosition });
+                    lastConeTime = nowTime;
                 }
 
                 lastTime = nowTime;

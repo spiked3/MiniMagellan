@@ -5,8 +5,6 @@ VisualStudioVersion = 14.0.23107.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MiniMagellan", "MiniMagellan\MiniMagellan.csproj", "{CF5FFA14-3814-420A-A130-BC7BF67DDA12}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PixyWatch_fake", "PixyWatch_fake\PixyWatch_fake.csproj", "{E5C2D1CA-1443-48F4-B348-1A1E6BE3EEE4}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -17,10 +15,6 @@ Global
 		{CF5FFA14-3814-420A-A130-BC7BF67DDA12}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CF5FFA14-3814-420A-A130-BC7BF67DDA12}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{CF5FFA14-3814-420A-A130-BC7BF67DDA12}.Release|Any CPU.Build.0 = Release|Any CPU
-		{E5C2D1CA-1443-48F4-B348-1A1E6BE3EEE4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{E5C2D1CA-1443-48F4-B348-1A1E6BE3EEE4}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{E5C2D1CA-1443-48F4-B348-1A1E6BE3EEE4}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{E5C2D1CA-1443-48F4-B348-1A1E6BE3EEE4}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

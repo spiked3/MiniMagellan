@@ -101,10 +101,6 @@ namespace MiniMagellan
                         }
                         break;
 
-                        // todo pilot firmware change +++ affects Dave
-                        // I would prefer to not have move reset PIDs
-                        // but since they do, we need to send only once, and wait
-                        // and not try to correct heading in transit
                     case RobotState.Navigating:
                         if (subState == NavState.MoveStart)
                         {

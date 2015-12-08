@@ -76,7 +76,7 @@ namespace Spiked3
             Mq.MqttMsgPublishReceived += MqttMsgPublishReceived;
             try
             {                
-                Mq.Connect("pTest");    // todo come up with a better clientID
+                Mq.Connect("mmKernel");
             }
             catch (Exception)
             {

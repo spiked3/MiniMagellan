@@ -223,11 +223,11 @@ namespace MiniMagellan
 
         void ListenWayPoints()
         {
-            xCon.WriteLine("Listen for WayPoints");
+            xCon.WriteLine("^yListen for WayPoints");
             Mq = new MqttClient(PilotString);
-            Trace.WriteLine(".connecting");
+            Trace.WriteLine("^y.connecting");
             Mq.Connect("MM1");
-            Trace.WriteLine(string.Format(".Connected to MQTT @ {0}", PilotString));
+            Trace.WriteLine(string.Format("^y.Connected to MQTT @ {0}", PilotString));
             Mq.MqttMsgPublishReceived += PublishReceived;
             Mq.Subscribe(new string[] { "Navplan/WayPoints" }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
         }
@@ -249,7 +249,7 @@ namespace MiniMagellan
             if (Mq != null && Mq.IsConnected)
             {
                 Mq.Disconnect();
-                Trace.WriteLine("..Disconnected MQTT");
+                Trace.WriteLine("^y..Disconnected MQTT");
             }
         }
 
