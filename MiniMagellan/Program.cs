@@ -186,9 +186,9 @@ namespace MiniMagellan
         {
             ShutDown();
             xCon.WriteLine("\nPress any key to continue");
-#if !__MonoCS__
+//#if !__MonoCS__
             Console.ReadKey();
-#endif
+//#endif
         }
 
         private void ShutDown()
@@ -268,7 +268,7 @@ namespace MiniMagellan
 
         static void configPilot()
         {
-            Pilot.Send(new { Cmd = "CONFIG", TPM = 336, MMX = 450, StrRv = -1 });
+            Pilot.Send(new { Cmd = "CONFIG", TPM = 332, MMX = 450, StrRv = -1 });
             Pilot.Send(new { Cmd = "CONFIG", M1 = new int[] { 1, -1 }, M2 = new int[] { -1, 1 } });
             Pilot.Send(new { Cmd = "RESET", Hdg = ResetHeading });
             Pilot.Send(new { Cmd = "ESC", Value = 1 });

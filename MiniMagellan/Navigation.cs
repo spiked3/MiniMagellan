@@ -167,7 +167,7 @@ namespace MiniMagellan
                     case "Move":
                         if (subState == NavState.Moving && ((string)json.V).Equals("1"))
                         {
-                            xCon.Write("^gMove completed");
+                            xCon.WriteLine("^gMove completed");
                             Program.State = RobotState.Idle;
                         }
                         break;
@@ -175,7 +175,7 @@ namespace MiniMagellan
                     case "Rotate":
                         if (subState == NavState.Rotating && ((string)json.V).Equals("1"))
                         {
-                            xCon.Write("^gRotate completed");
+                            xCon.WriteLine("^gRotate completed");
                             subState = NavState.MoveStart;
                         }
                         break;
