@@ -80,7 +80,9 @@ namespace Spiked3
             }
             catch (Exception)
             {
+#if !__MonoCS__
                 Debugger.Break();
+#endif
                 throw;
             }
             Trace.WriteLine(string.Format("Connected to MQTT @ {0}", c));
@@ -125,7 +127,10 @@ namespace Spiked3
             }
             catch (Exception ex)
             {
+#if !__MonoCS__
+
                 Debugger.Break();
+#endif
                 Trace.WriteLine(ex.Message);
             }
             Trace.WriteLine(string.Format("Serial opened({0}) on {1}", Serial.IsOpen, Serial.PortName));
@@ -269,9 +274,11 @@ namespace Spiked3
                 }
                 else
                     recvbuf[recvIdx++] = (byte)b;
+#if !__MonoCS__
 
                 if (recvIdx >= recvbuf.Length)
                     System.Diagnostics.Debugger.Break();    // overflow
+#endif
             }
         }
     }
