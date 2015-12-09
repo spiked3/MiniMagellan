@@ -69,71 +69,173 @@ namespace MiniMagellan
                 switch (Program.State)
                 {
                     case RobotState.Idle:
-                        if (CurrentWayPoint != null && CurrentWayPoint.isAction)
-                        {
-                            Program.State = RobotState.Action;
-                            continue;
-                        }
-
-                        if (Program.WayPoints == null || Program.WayPoints.Count == 0)
-                        {
-                            Program.Pilot.Send(new { Cmd = "MOV", M1 = 0, M2 = 0 });    // make sure we're stopped
-                            xCon.WriteLine("^yWayPoint stack empty");
-                            Program.State = RobotState.Finished;
-                            CurrentWayPoint = null;
-                        }
-                        else
-                        {
-                            CurrentWayPoint = Program.WayPoints.Pop();
-                            //expectingBumper = CurrentWayPoint.isAction;
-
-                            if (EscapeInProgress && CurrentWayPoint == EscapeWaypoint)
-                                EscapeInProgress = false;
-                            Program.State = RobotState.Navigating;
-                            if (DistanceToWayPoint > .05)
-                            {
-                                subState = NavState.Rotating;
-                                Timeout = DateTime.Now + rotateTimeout;
-                                lastHdg = hdgToWayPoint;
-                                Program.Pilot.Send(new { Cmd = "ROT", Hdg = lastHdg });
-                                subState = NavState.Rotating;
-                            }
-                            else
-                            {
-                                subState = NavState.Moving;
-                            }
-                        }
+                        OnIdle();
                         break;
 
                     case RobotState.Navigating:
-                        if (subState == NavState.MoveStart)
-                        {
-                            var NewSpeed = 50;
-                            //if (DistanceToWayPoint < 5)
-                            //    NewSpeed = 50;
-                            //if (DistanceToWayPoint < 1)
-                            //    NewSpeed = 40;
-                            lastHdg = hdgToWayPoint;
-                            Program.Pilot.Send(new { Cmd = "MOV", Pwr = NewSpeed, Hdg = lastHdg, Dist = DistanceToWayPoint });
-                            subState = NavState.Moving;
-                            Thread.Sleep(500);
-                        }
+                        OnNavigating();
                         break;
 
                     case RobotState.Action:
-                        Program.Ar.EnterBallisticSection(this);
-
-                        Thread.Sleep(1000);
-
-                        Program.Ar.LeaveBallisticSection(this);
-                        CurrentWayPoint.isAction = false;
-                        Program.State = RobotState.Idle;
+                        OnAction();
                         break;
                 }
             }
 
             Program.Pilot.Send(new { Cmd = "ESC", Value = 0 });
             xCon.WriteLine("^wNavigation exiting");
+        }
+
+        void OnIdle()
+        {
+            _T("^mOnIdle");
+            //if (CurrentWayPoint != null && CurrentWayPoint.isAction)
+            //{
+            //    Program.State = RobotState.Action;
+            //    return;
+            //}
+
+            if (Program.WayPoints == null || Program.WayPoints.Count == 0)
+            {
+                Program.Pilot.Send(new { Cmd = "MOV", M1 = 0, M2 = 0 });    // make sure we're stopped
+                _T("^cFinished");
+                Program.State = RobotState.Finished;
+                CurrentWayPoint = null;
+            }
+            else
+            {
+                _T("^mPop Waypoint");
+                CurrentWayPoint = Program.WayPoints.Pop();
+
+                if (EscapeInProgress && CurrentWayPoint == EscapeWaypoint)
+                    EscapeInProgress = false;
+
+                Program.State = RobotState.Navigating;
+                if (DistanceToWayPoint > .05)
+                {
+                    subState = NavState.Rotating;
+                    Timeout = DateTime.Now + rotateTimeout;
+                    lastHdg = hdgToWayPoint;
+                    _T("^mRotating");
+                    Program.Pilot.Send(new { Cmd = "ROT", Hdg = lastHdg });
+                    subState = NavState.Rotating;
+                }
+                else
+                {
+                    _T("^mMoving");
+                    subState = NavState.Moving;
+                }
+            }
+        }
+
+        private void _T(string t)
+        {
+            xCon.WriteLine(t);
+        }
+
+        private void OnAction()
+        {
+            throw new NotImplementedException("OnAction");
+
+            Program.Ar.EnterBallisticSection(this);
+            Thread.Sleep(1000);
+            Program.Ar.LeaveBallisticSection(this);
+            Program.State = RobotState.Idle;
+        }
+
+        private void OnNavigating()
+        {
+            if (subState == NavState.MoveStart)
+            {
+                _T("^mNavigating MoveStart");
+                var NewSpeed = 50;
+                //if (DistanceToWayPoint < 5)
+                //    NewSpeed = 50;
+                //if (DistanceToWayPoint < 1)
+                //    NewSpeed = 40;
+                lastHdg = hdgToWayPoint;
+                _T("^mNavigating Moving");
+                Program.Pilot.Send(new { Cmd = "MOV", Pwr = NewSpeed, Hdg = lastHdg, Dist = DistanceToWayPoint });
+                subState = NavState.Moving;
+                Thread.Sleep(500);
+            }
+        }
+
+        private void OnRotateComplete(dynamic json)
+        {
+            if (subState == NavState.Rotating && ((string)json.V).Equals("1"))
+            {
+                _T("^gRotate completed");
+                subState = NavState.MoveStart;
+            }
+        }
+
+        private void OnMoveComplete(dynamic json)
+        {
+            if (subState == NavState.Moving && ((string)json.V).Equals("1"))
+            {
+                _T("^gMove completed");
+                Program.State = RobotState.Idle;
+            }
+        }
+
+        void OnBumperEvent(dynamic json)
+        {
+            if (((string)json.V).Equals("1"))
+            {
+                // obstacle!!!!!
+                if (CurrentWayPoint.isAction)
+                {
+                    _T("^gExpected Bumper");
+                    Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
+
+                    // backup
+                    Program.Ar.EnterBallisticSection(this);
+
+                    Program.Pilot.Send(new { Cmd = "Mov", M1 = -40, M2 = -40 });
+                    Thread.Sleep(1000);     // 1 second reverse
+                    Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
+                    Program.State = RobotState.Idle;        // action complete
+
+                    Program.Ar.LeaveBallisticSection(this);
+                }
+                else
+                {
+                    _T("^rUnexpected Bumper");
+                    Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
+                    subState = NavState.BumperReverse;
+
+                    // backup
+                    Program.Ar.EnterBallisticSection(this);
+
+                    Program.Pilot.Send(new { Cmd = "Mov", M1 = -40, M2 = -40 });
+                    Thread.Sleep(1000);     // 1 second reverse
+                    Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
+
+                    // todo obstacle during escape
+                    Program.State = RobotState.eStop;
+                    Program.Ar.LeaveBallisticSection(this);
+#if !__MonoCS__
+                    //Debugger.Break();
+#endif
+                    return;
+
+                    // save current waypoint
+                    // re push, dont repush current if already escaping
+                    // push new Waypoint for avoid 
+
+                    EscapeWaypoint = CurrentWayPoint;
+                    EscapeInProgress = true;
+
+                    Trace.WriteLine("Inserting Fake Escape WayPoint");
+
+                    Program.WayPoints.Push(EscapeWaypoint);
+
+                    Program.WayPoints.Push(new WayPoint { X = 0.0F, Y = 0.0F, isAction = true });
+
+                    Program.State = RobotState.Idle;
+                }
+            }
         }
 
         void PilotReceive(dynamic json)
@@ -143,73 +245,15 @@ namespace MiniMagellan
                 switch ((string)json.T)
                 {
                     case "Bumper":
-                        if (((string)json.V).Equals("1"))
-                        {
-                            // obstacle!!!!!
-                            if (CurrentWayPoint.isAction)
-                            {
-                                //expectingBumper = false;
-                                Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
-                                xCon.WriteLine("^gExpected Bumper");
-
-                                // backup .5
-                                // curious if this works, otherwise just time wait
-                                Program.Pilot.Send(new { Cmd = "Mov", M1 = -40, M2 = -40, Dist = .5f });
-                                Program.Pilot.waitForEvent();
-                                Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
-                                Program.State = RobotState.Idle;        // action complete
-                            }
-                            else
-                            {
-                                Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
-                                subState = NavState.BumperReverse;
-                                xCon.WriteLine("^rUnexpected Bumper");
-                                
-                                // backup .5
-                                // curious if this works, otherwise just time wait
-                                Program.Pilot.Send(new { Cmd = "Mov", M1 = -40, M2 = -40, Dist = .5f });
-                                Program.Pilot.waitForEvent();
-                                Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
-
-                                // todo obstacle during escape
-                                Program.State = RobotState.eStop;
-#if !__MonoCS__
-                                Debugger.Break();
-#endif
-                                break;
-
-                                // save current waypoint
-                                // re push, dont repush current if already escaping
-                                // push new Waypoint for avoid 
-
-                                EscapeWaypoint = CurrentWayPoint;
-                                EscapeInProgress = true;
-
-                                Trace.WriteLine("Inserting Fake Escape WayPoint");
-
-                                Program.WayPoints.Push(EscapeWaypoint);
-
-                                Program.WayPoints.Push(new WayPoint { X = 0.0F, Y = 0.0F, isAction = true });
-
-                                Program.State = RobotState.Idle;
-                            }
-                        }
+                        OnBumperEvent(json);
                         break;
 
                     case "Move":
-                        if (subState == NavState.Moving && ((string)json.V).Equals("1"))
-                        {
-                            xCon.WriteLine("^gMove completed");
-                            Program.State = RobotState.Idle;
-                        }
+                        OnMoveComplete(json);
                         break;
 
                     case "Rotate":
-                        if (subState == NavState.Rotating && ((string)json.V).Equals("1"))
-                        {
-                            xCon.WriteLine("^gRotate completed");
-                            subState = NavState.MoveStart;
-                        }
+                        OnRotateComplete(json);
                         break;
                 }
             }
