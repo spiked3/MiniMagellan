@@ -11,13 +11,15 @@ namespace MiniMagellan
 {
     public class Navigation : IBehavior
     {
-        enum NavState { Rotating, MoveStart, Moving, Stopped };
+        enum NavState { Rotating, MoveStart, Moving, Stopped, BumperReverse, ActionComplete };
 
         public bool Lock { get; set; }
         NavState subState;
 
         bool EscapeInProgress = false;
         WayPoint EscapeWaypoint;
+
+        //public bool expectingBumper { get; set; }
 
         readonly double DEG_PER_RAD = 180 / Math.PI;
 
@@ -83,10 +85,12 @@ namespace MiniMagellan
                         else
                         {
                             CurrentWayPoint = Program.WayPoints.Pop();
+                            //expectingBumper = CurrentWayPoint.isAction;
+
                             if (EscapeInProgress && CurrentWayPoint == EscapeWaypoint)
                                 EscapeInProgress = false;
                             Program.State = RobotState.Navigating;
-                            if (DistanceToWayPoint > .5)
+                            if (DistanceToWayPoint > .05)
                             {
                                 subState = NavState.Rotating;
                                 Timeout = DateTime.Now + rotateTimeout;
@@ -142,25 +146,53 @@ namespace MiniMagellan
                         if (((string)json.V).Equals("1"))
                         {
                             // obstacle!!!!!
-                            Program.Pilot.Send(new { Cmd = "Mov", M1 = 0.0, M2 = 0.0 });
-                            subState = NavState.Stopped;
-                            xCon.WriteLine("Unexpected Bumper"); 
+                            if (CurrentWayPoint.isAction)
+                            {
+                                //expectingBumper = false;
+                                Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
+                                xCon.WriteLine("^gExpected Bumper");
 
-                            // todo obstacle during escape
-                            // save current waypoint
-                            // re push, dont repush current if already escaping
-                            // push new Waypoint for avoid 
+                                // backup .5
+                                // curious if this works, otherwise just time wait
+                                Program.Pilot.Send(new { Cmd = "Mov", M1 = -40, M2 = -40, Dist = .5f });
+                                Program.Pilot.waitForEvent();
+                                Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
+                                Program.State = RobotState.Idle;        // action complete
+                            }
+                            else
+                            {
+                                Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
+                                subState = NavState.BumperReverse;
+                                xCon.WriteLine("^rUnexpected Bumper");
+                                
+                                // backup .5
+                                // curious if this works, otherwise just time wait
+                                Program.Pilot.Send(new { Cmd = "Mov", M1 = -40, M2 = -40, Dist = .5f });
+                                Program.Pilot.waitForEvent();
+                                Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
 
-                            EscapeWaypoint = CurrentWayPoint;
-                            EscapeInProgress = true;
+                                // todo obstacle during escape
+                                Program.State = RobotState.eStop;
+#if !__MonoCS__
+                                Debugger.Break();
+#endif
+                                break;
 
-                            Trace.WriteLine("Inserting Fake Escape WayPoint");
+                                // save current waypoint
+                                // re push, dont repush current if already escaping
+                                // push new Waypoint for avoid 
 
-                            Program.WayPoints.Push(EscapeWaypoint);
+                                EscapeWaypoint = CurrentWayPoint;
+                                EscapeInProgress = true;
 
-                            Program.WayPoints.Push(new WayPoint { X = 0.0F, Y = 0.0F, isAction = true });
+                                Trace.WriteLine("Inserting Fake Escape WayPoint");
 
-                            Program.State = RobotState.Idle;
+                                Program.WayPoints.Push(EscapeWaypoint);
+
+                                Program.WayPoints.Push(new WayPoint { X = 0.0F, Y = 0.0F, isAction = true });
+
+                                Program.State = RobotState.Idle;
+                            }
                         }
                         break;
 

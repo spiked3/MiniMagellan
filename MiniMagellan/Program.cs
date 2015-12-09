@@ -13,7 +13,7 @@ using Spiked3;
 
 namespace MiniMagellan
 {
-    public enum RobotState { Init, Navigating, Searching, Action, Idle, Finished, UnExpectedBumper, Shutdown };
+    public enum RobotState { Init, Navigating, Searching, Action, Idle, Finished, UnExpectedBumper, Shutdown, eStop };
 
     // todo trace incoming and outgoing pilot traffic to file
 
@@ -114,16 +114,16 @@ namespace MiniMagellan
 
             int telementryIdx = 0;
 
+            new Task(ListenWayPointsTask).Start();
+
             // menu
             Dictionary<char, string> menu = new Dictionary<char, string>() {
-                    { 'W', "Waypoints (MQTT)" },
                     { 'F', "Fake waypoints" },
-                    { 'R', "Config/Reset" },
-                    { 'Z', "Close MQTT" },
+                    { 'C', "Config/reset" },
                     { 'A', "Autonomous Start" },
                     { 'S', "State" },
-                    { 'O', ".rOtate" },
-                    { 'V', ".moVe" },
+                    { 'R', ".Rotate" },
+                    { 'M', ".Move" },
                     { 'B', ".Bumper" },
                     { 'T', "Telementry" },
                     { ' ', "eStop (space bar)" } };
@@ -138,15 +138,11 @@ namespace MiniMagellan
                 switch (n)
                 {
                     case 'W':
-                        ListenWayPoints();
                         break;
                     case 'F':
                         FakeWayPoints();
                         break;
-                    case 'Z':
-                        CloseMqtt();
-                        break;
-                    case 'R':
+                    case 'C':
                         configPilot();
                         break;
                     case 'A':
@@ -156,14 +152,14 @@ namespace MiniMagellan
                     case 'S':
                         ViewStatus();
                         break;
-                    case 'O':
+                    case 'R':
                         xCon.Write("^c#");
                         X = Nav.CurrentWayPoint.X;
                         Y = Nav.CurrentWayPoint.Y;
                         H = (float)Nav.lastHdg;
                         Pilot.Serial_OnReceive(new { T = "Rotate", V = "1" });
                         break;
-                    case 'V':
+                    case 'M':
                         xCon.Write("^c#");
                         Pilot.Serial_OnReceive(new { T = "Move", V = "1" });
                         break;
@@ -175,6 +171,7 @@ namespace MiniMagellan
                         Pilot.Send(new { Cmd = "TELEM", Flag = (++telementryIdx % 5) });
                         break;
                     case ' ': // EStop
+                        State = RobotState.eStop;
                         Pilot.Send(new { Cmd = "MOV", M1 = 0, M2 = 0 });
                         Pilot.Send(new { Cmd = "ESC", Value = 0 });
                         break;
@@ -221,13 +218,12 @@ namespace MiniMagellan
             }
         }
 
-        void ListenWayPoints()
+        void ListenWayPointsTask()
         {
-            xCon.WriteLine("^yListen for WayPoints");
             Mq = new MqttClient(PilotString);
-            Trace.WriteLine("^y.connecting");
+            xCon.WriteLine(string.Format("^yListenWayPointsTask.connecting to MQTT @ {0}", PilotString));
             Mq.Connect("MM1");
-            Trace.WriteLine(string.Format("^y.Connected to MQTT @ {0}", PilotString));
+            xCon.WriteLine("^yListenWayPointsTask.Connected");
             Mq.MqttMsgPublishReceived += PublishReceived;
             Mq.Subscribe(new string[] { "Navplan/WayPoints" }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
         }

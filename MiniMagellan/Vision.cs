@@ -29,11 +29,11 @@ namespace MiniMagellan
 
             if (!Program.PilotString.Contains("com"))
             {
-                xCon.WriteLine("Vision::Listen for Pixy");
                 Mq = new MqttClient(Program.PilotString);
-                Trace.WriteLine("^y.connecting");
+                xCon.WriteLine(string.Format("^yVision.connecting to MQTT @ {0}", Program.PilotString));
                 Mq.Connect("MMPXY");
-                Trace.WriteLine(string.Format("^y.Connected to MQTT @ {0}", Program.PilotString));
+                xCon.WriteLine("^yVision.Connected");
+
                 Mq.MqttMsgPublishReceived += PixyMqRecvd;
                 Mq.Subscribe(new string[] { "robot1/pixyCam" }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
             }
