@@ -38,16 +38,16 @@ namespace MiniMagellan
 
         public void TaskRun()
         {
-            _T("Vision TaskRun started");
+            Trace.t(cc.Norm, "Vision TaskRun started");
 
             Program.Pilot.Send(new { Cmd = "SRVO", Value = servoPosition });
 
             if (!Program.PilotString.Contains("com"))
             {
                 Mq = new MqttClient(Program.PilotString);
-                _T(string.Format("vision connecting to MQTT @ {0}", Program.PilotString));
+                Trace.t(cc.Norm, string.Format("vision connecting to MQTT @ {0}", Program.PilotString));
                 Mq.Connect("MMPXY");
-                _T("vision connected");
+                Trace.t(cc.Norm, "vision connected");
 
                 Mq.MqttMsgPublishReceived += PixyMqRecvd;
                 Mq.Subscribe(new string[] { "robot1/pixyCam" }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
@@ -69,7 +69,7 @@ namespace MiniMagellan
                             if (coneFlag != ConeState.Lost)
                             {
                                 coneFlag = ConeState.Lost;
-                                _T("^rCone lost"); Console.Beep(); Console.Beep();
+                                Trace.t(cc.Warn, "Cone lost"); Console.Beep(); Console.Beep();
                                 servoPosition = 90;
                                 Program.Pilot.Send(new { Cmd = "SRVO", Value = servoPosition });
                             }
@@ -79,7 +79,7 @@ namespace MiniMagellan
                 Thread.Sleep(200);
             }
 
-            _T("^yVision exiting");
+            Trace.t(cc.Warn, "Vision exiting");
             SubState = VisionState.Idle;
             if (Mq != null && Mq.IsConnected)
                 Mq.Disconnect();
@@ -113,7 +113,7 @@ namespace MiniMagellan
                     {
                         if (coneFlag == ConeState.Lost)
                         {   // we just found it
-                            _T("^gCone Found"); Console.Beep();
+                            Trace.t(cc.Good, "Cone Found"); Console.Beep();
                             coneFlag = ConeState.Found;
                             prevErr = integral = derivative = 0;
                             foundTime = nowTime;
@@ -141,12 +141,6 @@ namespace MiniMagellan
             string t = string.Format("{0} Servo Position({1})", Enum.GetName(typeof(VisionState), SubState), servoPosition);
             return ("^c" + t);
         }
-
-        private void _T(string t)
-        {
-            xCon.WriteLine(t);
-        }
-
 
         float Pid(float setPoint, float presentValue, float Kp, float Ki, float Kd,
             ref float previousError, ref float integral, ref float derivative, float dt, float errorSmooth)

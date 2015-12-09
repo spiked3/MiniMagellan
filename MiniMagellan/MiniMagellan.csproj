@@ -72,6 +72,7 @@
     <Compile Include="Pilot.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Trace.cs" />
     <Compile Include="Vision.cs" />
     <Compile Include="WayPoints.cs" />
   </ItemGroup>

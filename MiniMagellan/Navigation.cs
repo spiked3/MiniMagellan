@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -56,7 +55,7 @@ namespace MiniMagellan
 
         public void TaskRun()
         {
-            _T("Navigation TaskRun started");
+            Trace.t(cc.Norm, "Navigation TaskRun started");
 
             Program.Pilot.Send(new { Cmd = "ESC", Value = 1 });
 
@@ -83,23 +82,23 @@ namespace MiniMagellan
             }
 
             Program.Pilot.Send(new { Cmd = "ESC", Value = 0 });
-            _T("^yNavigation exiting");
+            Trace.t(cc.Warn, "Navigation exiting");
         }
 
         void OnIdle()
         {
-            _T("^cOnIdle");
+            Trace.t(cc.Norm, "OnIdle");
             if (Program.WayPoints == null || Program.WayPoints.Count == 0)
             {
                 Program.Pilot.Send(new { Cmd = "MOV", M1 = 0, M2 = 0 });    // make sure we're stopped
-                _T("^cFinished");
+                Trace.t(cc.Norm, "Finished");
                 Program.State = RobotState.Finished;
                 CurrentWayPoint = null;
                 Program.Pilot.Send(new { Cmd = "ROT", Hdg = 0 }); // todo for convience
             }
             else
             {
-                _T("^cPop Waypoint");
+                Trace.t(cc.Norm, "Pop Waypoint");
                 CurrentWayPoint = Program.WayPoints.Pop();
 
                 if (EscapeInProgress && CurrentWayPoint == EscapeWaypoint)
@@ -111,21 +110,16 @@ namespace MiniMagellan
                     subState = NavState.Rotating;
                     Timeout = DateTime.Now + rotateTimeout;
                     lastHdg = hdgToWayPoint;
-                    _T("^cRotating");
+                    Trace.t(cc.Norm, "Rotating");
                     Program.Pilot.Send(new { Cmd = "ROT", Hdg = lastHdg });
                     subState = NavState.Rotating;
                 }
                 else
                 {
-                    _T("^cMoving");
+                    Trace.t(cc.Norm, "Moving");
                     subState = NavState.Moving;
                 }
             }
-        }
-
-        private void _T(string t)
-        {
-            xCon.WriteLine(t);
         }
 
         private void OnAction()
@@ -145,14 +139,14 @@ namespace MiniMagellan
         {
             if (subState == NavState.MoveStart)
             {
-                _T("^cNavigating MoveStart");
+                Trace.t(cc.Norm, "Navigating MoveStart");
                 var NewSpeed = 50;
                 //if (DistanceToWayPoint < 5)
                 //    NewSpeed = 50;
                 //if (DistanceToWayPoint < 1)
                 //    NewSpeed = 40;
                 lastHdg = hdgToWayPoint;
-                _T("^cNavigating Moving");
+                Trace.t(cc.Norm, "Navigating Moving");
                 Program.Pilot.Send(new { Cmd = "MOV", Pwr = NewSpeed, Hdg = lastHdg, Dist = DistanceToWayPoint });
                 subState = NavState.Moving;
                 Thread.Sleep(500);
@@ -163,7 +157,7 @@ namespace MiniMagellan
         {
             if (subState == NavState.Rotating && ((string)json.V).Equals("1"))
             {
-                _T("^gRotate completed");
+                Trace.t(cc.Good, "Rotate completed");
                 subState = NavState.MoveStart;
             }
         }
@@ -172,7 +166,7 @@ namespace MiniMagellan
         {
             if (subState == NavState.Moving && ((string)json.V).Equals("1"))
             {
-                _T("^gMove completed");
+                Trace.t(cc.Good, "Move completed");
                 Program.State = RobotState.Idle;
             }
         }
@@ -184,7 +178,7 @@ namespace MiniMagellan
                 // obstacle!!!!!
                 if (CurrentWayPoint.isAction)
                 {
-                    _T("^gExpected Bumper");
+                    Trace.t(cc.Good, "Expected Bumper");
                     Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
 
                     // backup
@@ -199,7 +193,7 @@ namespace MiniMagellan
                 }
                 else
                 {
-                    _T("^rUnexpected Bumper");
+                    Trace.t(cc.Bad, "Unexpected Bumper");
                     Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
                     subState = NavState.BumperReverse;
 
@@ -225,7 +219,7 @@ namespace MiniMagellan
                     EscapeWaypoint = CurrentWayPoint;
                     EscapeInProgress = true;
 
-                    Trace.WriteLine("Inserting Fake Escape WayPoint");
+                    Trace.t(cc.Warn, "Inserting Fake Escape WayPoint");
 
                     Program.WayPoints.Push(EscapeWaypoint);
 

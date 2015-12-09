@@ -14,9 +14,15 @@ namespace MiniMagellan
         static ConsoleColor FONT_COLOR = Console.ForegroundColor;
         static ConsoleColor BACKGROUND_COLOR = Console.BackgroundColor;
 
-        public static void WriteLine(string v, object o1 = null, object o2 = null, object o3 = null)
+        public static void t(this string t)
         {
-            Write(v + o1 + o2 + o3 + '\n');
+            WriteLine(t);
+        }
+
+        public static void WriteLine(string v, object o1 = null, object o2 = null, object o3 = null, object o4 = null,
+                object o5 = null, object o6 = null, object o7 = null, object o8 = null)
+        {
+            Write(v + o1 + o2 + o3 + o4 + o5 + o6 + o7 + o8 + '\n');
         }
 
         public static int Write(string input)
