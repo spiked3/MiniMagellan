@@ -191,7 +191,7 @@ namespace MiniMagellan
             {
                 Trace.t(cc.Status, string.Format("State({0}) X({1:F3}) Y({2:F3}) H({3:F1}) WayPoints({4})",
                     State, X, Y, H, WayPoints != null ? WayPoints.Count.ToString() : "None"));
-                Ar.threadMap.All(kv =>
+                Ar.behaviorNameMap.All(kv =>
                 {
                     Trace.t(cc.Status, string.Format("{0}: {1}", kv.Value, kv.Key.GetStatus()));
                     return true;
