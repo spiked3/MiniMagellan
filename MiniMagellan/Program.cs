@@ -16,8 +16,16 @@ namespace MiniMagellan
     public enum RobotState { Init, Navigating, Searching, Action, Idle, Finished, UnExpectedBumper, Shutdown, eStop };
 
     // todo trace incoming and outgoing pilot traffic to file
+    /* colors
+       white  normal trace
+       red    error
+       yellow warning
+       green  a good thing
+       cyan   status
+       magenta
+    */
 
-    public class Program : TraceListener
+    public class Program 
     {
         public static RobotState State = RobotState.Init;
         public static float X, Y, H;
@@ -28,16 +36,13 @@ namespace MiniMagellan
         public bool ConsoleLockFlag;
         MqttClient Mq;
 
-        //string PilotString = "localhost";
-        //string PilotString = "com15";
-        //public static string PilotString = "com15";
-        public static string PilotString = "192.168.42.1";
+        public static string PilotString = "localhost"; // use cmd argument -pilot to set differently
 
         public static float ResetHeading { get; private set; }
 
-        public static void _T(String t)
+        private void _T(string t)
         {
-            Trace.WriteLine("Program::" + t);
+            xCon.WriteLine(t);
         }
 
         char GetCharChoice(Dictionary<char, string> choices)
@@ -65,7 +70,7 @@ namespace MiniMagellan
             }
         }
 
-        public bool Linux { get { return Environment.OSVersion.Platform == PlatformID.Unix ||
+        public bool Unix { get { return Environment.OSVersion.Platform == PlatformID.Unix ||
                     Environment.OSVersion.Platform == PlatformID.MacOSX ||
                     (int)Environment.OSVersion.Platform == 128; } }
 
@@ -76,18 +81,15 @@ namespace MiniMagellan
 
         void Main1(string[] args)
         {
-            Trace.Listeners.Add(this);
-
-            xCon.WriteLine("*m^w   Spiked3.com MiniMagellan Kernel - (c) 2015-2016 Mike Partain   ");
-            xCon.WriteLine("*w^z  \\^c || break to stop  ");
+            _T("*w^z   Spiked3.com MiniMagellan Kernel - (c) 2015-2016 Mike Partain   ");
+            _T("*w^z  \\^c || break to stop  ");
 
 #if __MonoCS__
             xCon.Write("Mono / ");
 #else
             xCon.Write(".Net / ");
-
 #endif
-            if (Linux)
+            if (Unix)
                 xCon.WriteLine("Unix");
             else
                 xCon.WriteLine("Windows");
@@ -146,7 +148,7 @@ namespace MiniMagellan
                         configPilot();
                         break;
                     case 'A':
-                        xCon.WriteLine(string.Format("^yStarting autonomous @ {0}", DateTime.Now.ToLongTimeString()));
+                        _T(string.Format("^yStarting autonomous @ {0}", DateTime.Now.ToLongTimeString()));
                         State = RobotState.Idle;
                         break;
                     case 'S':
@@ -171,6 +173,7 @@ namespace MiniMagellan
                         Pilot.Send(new { Cmd = "TELEM", Flag = (++telementryIdx % 5) });
                         break;
                     case ' ': // EStop
+                        _T("^reStop");
                         State = RobotState.eStop;
                         Pilot.Send(new { Cmd = "MOV", M1 = 0, M2 = 0 });
                         Pilot.Send(new { Cmd = "ESC", Value = 0 });
@@ -182,7 +185,7 @@ namespace MiniMagellan
         private void Console_CancelKeyPress(object sender, ConsoleCancelEventArgs e)
         {
             ShutDown();
-            xCon.WriteLine("\nPress any key to continue");
+            _T("^y\nPress any key to continue");
 //#if !__MonoCS__
             Console.ReadKey();
 //#endif
@@ -190,29 +193,29 @@ namespace MiniMagellan
 
         private void ShutDown()
         {
-            xCon.WriteLine("Kernel Stopping");
+            _T("^yKernel Stopping");
             State = RobotState.Shutdown;
             Pilot.Send(new { Cmd = "ESC", Value = 0 });
             System.Threading.Thread.Sleep(500);
             Pilot.Close();
         }
 
-        private static void ViewStatus()
+        void ViewStatus()
         {
             lock (xCon.consoleLock)
             {
-                xCon.WriteLine(string.Format("^mState({0}) X({1:F3}) Y({2:F3}) H({3:F1}) WayPoints({4})",
+                _T(string.Format("^cState({0}) X({1:F3}) Y({2:F3}) H({3:F1}) WayPoints({4})",
                     State, X, Y, H, WayPoints != null ? WayPoints.Count.ToString() : "None"));
                 Ar.threadMap.All(kv =>
                 {
-                    xCon.WriteLine(string.Format("^w{0}: {1}", kv.Value, kv.Key.GetStatus()));
+                    _T(string.Format("^c{0}: {1}", kv.Value, kv.Key.GetStatus()));
                     return true;
                 });
-                xCon.WriteLine("^mWaypoints:");
+                _T("^cWaypoints:");
                 if (WayPoints != null)
                     WayPoints.All(wp =>
                     {
-                        xCon.WriteLine(string.Format("^w[{0:F3}, {1:F3}{2}]", wp.X, wp.Y, (wp.isAction ? ", Action" : "")));
+                        xCon.WriteLine(string.Format("^c[{0:F3}, {1:F3}{2}]", wp.X, wp.Y, (wp.isAction ? ", Action" : "")));
                         return true;
                     });
             }
@@ -221,9 +224,9 @@ namespace MiniMagellan
         void ListenWayPointsTask()
         {
             Mq = new MqttClient(PilotString);
-            xCon.WriteLine(string.Format("^yListenWayPointsTask.connecting to MQTT @ {0}", PilotString));
+            _T(string.Format("listenWayPointsTask, connecting to MQTT @ {0}", PilotString));
             Mq.Connect("MM1");
-            xCon.WriteLine("^yListenWayPointsTask.Connected");
+            _T("listenWayPointsTask connected");
             Mq.MqttMsgPublishReceived += PublishReceived;
             Mq.Subscribe(new string[] { "Navplan/WayPoints" }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
         }
@@ -231,7 +234,7 @@ namespace MiniMagellan
         void FakeWayPoints()
         {
             // {"ResetHdg":0,"WayPoints":[[0, 1, 0],[1, 1, 0],[0, 1, 0],[0, 0, 0]]}
-            xCon.WriteLine("^yLoaded fake WayPoints");
+            _T("^yLoaded fake WayPoints");
             WayPoints = new WayPoints();
             // add in reverse order (FILO)
             WayPoints.Push(new WayPoint { X = 0, Y = 0, isAction = false });
@@ -245,7 +248,7 @@ namespace MiniMagellan
             if (Mq != null && Mq.IsConnected)
             {
                 Mq.Disconnect();
-                Trace.WriteLine("^y..Disconnected MQTT");
+                _T("^ydisconnected MQTT");
             }
         }
 
@@ -259,7 +262,7 @@ namespace MiniMagellan
             Program.WayPoints = new WayPoints();
             for (int i = wps.Count - 1; i >= 0; i--)    // pushed in reverse, FILO
                 Program.WayPoints.Push(wps[i]);
-            xCon.WriteLine("^gWayPoint received and loaded");
+            _T("^gWayPoint received and loaded");
         }
 
         static void configPilot()
@@ -287,16 +290,6 @@ namespace MiniMagellan
                 case "Debug":
                     break;
             }
-        }
-
-        public override void Write(string message)
-        {
-            xCon.Write("^r" + message);
-        }
-
-        public override void WriteLine(string message)
-        {
-            xCon.WriteLine("^r" + message);
         }
     }
 }

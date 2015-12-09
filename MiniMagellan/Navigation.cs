@@ -56,7 +56,7 @@ namespace MiniMagellan
 
         public void TaskRun()
         {
-            xCon.WriteLine("^wNavigation started");
+            _T("Navigation TaskRun started");
 
             Program.Pilot.Send(new { Cmd = "ESC", Value = 1 });
 
@@ -83,28 +83,23 @@ namespace MiniMagellan
             }
 
             Program.Pilot.Send(new { Cmd = "ESC", Value = 0 });
-            xCon.WriteLine("^wNavigation exiting");
+            _T("^yNavigation exiting");
         }
 
         void OnIdle()
         {
-            _T("^mOnIdle");
-            //if (CurrentWayPoint != null && CurrentWayPoint.isAction)
-            //{
-            //    Program.State = RobotState.Action;
-            //    return;
-            //}
-
+            _T("^cOnIdle");
             if (Program.WayPoints == null || Program.WayPoints.Count == 0)
             {
                 Program.Pilot.Send(new { Cmd = "MOV", M1 = 0, M2 = 0 });    // make sure we're stopped
                 _T("^cFinished");
                 Program.State = RobotState.Finished;
                 CurrentWayPoint = null;
+                Program.Pilot.Send(new { Cmd = "ROT", Hdg = 0 }); // todo for convience
             }
             else
             {
-                _T("^mPop Waypoint");
+                _T("^cPop Waypoint");
                 CurrentWayPoint = Program.WayPoints.Pop();
 
                 if (EscapeInProgress && CurrentWayPoint == EscapeWaypoint)
@@ -116,13 +111,13 @@ namespace MiniMagellan
                     subState = NavState.Rotating;
                     Timeout = DateTime.Now + rotateTimeout;
                     lastHdg = hdgToWayPoint;
-                    _T("^mRotating");
+                    _T("^cRotating");
                     Program.Pilot.Send(new { Cmd = "ROT", Hdg = lastHdg });
                     subState = NavState.Rotating;
                 }
                 else
                 {
-                    _T("^mMoving");
+                    _T("^cMoving");
                     subState = NavState.Moving;
                 }
             }
@@ -135,10 +130,13 @@ namespace MiniMagellan
 
         private void OnAction()
         {
+            // we get here by not having a bumper event in an action
             throw new NotImplementedException("OnAction");
 
             Program.Ar.EnterBallisticSection(this);
+
             Thread.Sleep(1000);
+
             Program.Ar.LeaveBallisticSection(this);
             Program.State = RobotState.Idle;
         }
@@ -147,14 +145,14 @@ namespace MiniMagellan
         {
             if (subState == NavState.MoveStart)
             {
-                _T("^mNavigating MoveStart");
+                _T("^cNavigating MoveStart");
                 var NewSpeed = 50;
                 //if (DistanceToWayPoint < 5)
                 //    NewSpeed = 50;
                 //if (DistanceToWayPoint < 1)
                 //    NewSpeed = 40;
                 lastHdg = hdgToWayPoint;
-                _T("^mNavigating Moving");
+                _T("^cNavigating Moving");
                 Program.Pilot.Send(new { Cmd = "MOV", Pwr = NewSpeed, Hdg = lastHdg, Dist = DistanceToWayPoint });
                 subState = NavState.Moving;
                 Thread.Sleep(500);
@@ -263,7 +261,7 @@ namespace MiniMagellan
         {
             return CurrentWayPoint == null ?
             "No Waypoint" :
-            string.Format("CurrentWayPoint({0:F1},{1:F1})\nHeadingToWp({2:F1})\nDistanceToWp({3:F3})\nEscapeInProgress({4})",
+            string.Format("^cCurrentWayPoint({0:F1},{1:F1})\nHeadingToWp({2:F1})\nDistanceToWp({3:F3})\nEscapeInProgress({4})",
             CurrentWayPoint.X, CurrentWayPoint.Y, hdgToWayPoint, DistanceToWayPoint, EscapeInProgress);
         }
     }

@@ -21,18 +21,33 @@ namespace MiniMagellan
         enum VisionState { Idle, Run };
 
         VisionState SubState = VisionState.Idle;
-        public static bool ConeConfidence = false;
+        public static float ConeConfidence = 0;
+
+        // working ok, probably needs tweaking to cones and sunlight
+        float kP = 0.2F, kI = 0.3F, kD = 0.001F;
+        float prevErr, integral, derivative;
+        int servoPosition = 90;
+
+        DateTime lastTime = DateTime.Now;
+        DateTime lostTime, foundTime, lastConeTime;
+
+        enum ConeState { Lost, LostWait, Found };
+        ConeState coneFlag = ConeState.Lost;
+
+        TimeSpan lostWaitTime = new TimeSpan(0, 0, 2);    // 2 seconds
 
         public void TaskRun()
         {
+            _T("Vision TaskRun started");
+
             Program.Pilot.Send(new { Cmd = "SRVO", Value = servoPosition });
 
             if (!Program.PilotString.Contains("com"))
             {
                 Mq = new MqttClient(Program.PilotString);
-                xCon.WriteLine(string.Format("^yVision.connecting to MQTT @ {0}", Program.PilotString));
+                _T(string.Format("vision connecting to MQTT @ {0}", Program.PilotString));
                 Mq.Connect("MMPXY");
-                xCon.WriteLine("^yVision.Connected");
+                _T("vision connected");
 
                 Mq.MqttMsgPublishReceived += PixyMqRecvd;
                 Mq.Subscribe(new string[] { "robot1/pixyCam" }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
@@ -49,42 +64,28 @@ namespace MiniMagellan
                 switch (SubState)
                 {
                     case VisionState.Run:
-                            if (coneFlag != lostNFound.LostWait && DateTime.Now > lastConeTime + lostWaitTime)
+                        if (coneFlag != ConeState.LostWait && DateTime.Now > lastConeTime + lostWaitTime)
+                        {
+                            if (coneFlag != ConeState.Lost)
                             {
-                                if (coneFlag != lostNFound.Lost)
-                                    xCon.WriteLine("^rCone lost");
-                                coneFlag = lostNFound.Lost;
+                                coneFlag = ConeState.Lost;
+                                _T("^rCone lost"); Console.Beep(); Console.Beep();
                                 servoPosition = 90;
                                 Program.Pilot.Send(new { Cmd = "SRVO", Value = servoPosition });
                             }
-
-                        // umm yeah - things kind of work in the background magically
-                        // this is just some entertainment
-                        // if (coneFlag != lastConeFlag)
-                        //    message
-                        // lastConeFlag = coneFlag
+                        }
                         break;
                 }
                 Thread.Sleep(200);
             }
 
-            xCon.WriteLine("^wVision exiting");
+            _T("^yVision exiting");
             SubState = VisionState.Idle;
             if (Mq != null && Mq.IsConnected)
                 Mq.Disconnect();
         }
 
         // ##################### Pixy Blob
-
-        // working ok, probably needs tweaking to cones and sunlight
-        float kP = 0.2F, kI = 0.5F, kD = 0.01F;
-        float prevErr, integral, derivative;
-        int servoPosition = 90;
-        DateTime lastTime = DateTime.Now;
-        DateTime lostTime, foundTime, lastConeTime;
-        enum lostNFound {  Lost, LostWait, Found };
-        lostNFound coneFlag = lostNFound.Lost;
-        TimeSpan lostWaitTime = new TimeSpan(0,0,2);    // 2 seconds
 
         private void PixyMqRecvd(object sender, MqttMsgPublishEventArgs e)
         {
@@ -100,26 +101,33 @@ namespace MiniMagellan
 
                 if (a.Count > 2)    
                 {   // dont have cone
-                     if (coneFlag == lostNFound.Found)
+                     if (coneFlag == ConeState.Found)
                     { // we just lost it
                         lostTime = nowTime;
-                        coneFlag = lostNFound.LostWait;
+                        coneFlag = ConeState.LostWait;
                     }
                 }
                 else
                 {   // have cone
-                    if (coneFlag != lostNFound.Found)
+                    if (coneFlag != ConeState.Found)
                     {
-                        if (coneFlag == lostNFound.Lost)
-                            xCon.WriteLine("^gCone Found");
-                        coneFlag = lostNFound.Found;
-                        foundTime = nowTime;                        
+                        if (coneFlag == ConeState.Lost)
+                        {   // we just found it
+                            _T("^gCone Found"); Console.Beep();
+                            coneFlag = ConeState.Found;
+                            prevErr = integral = derivative = 0;
+                            foundTime = nowTime;
+                        }
                     }
 
                     float et = (nowTime - lastTime).Milliseconds / 1000F;
-                    servoPosition -= (int)Pid(160, middleX, kP, kI, kD, ref prevErr, ref integral, ref derivative, et, 1);
+                    servoPosition -= (int)Pid(160, middleX, kP, kI, kD, ref prevErr, ref integral, ref derivative, et, .8F);
                     //xCon.WriteLine(string.Format("^wSteering srvoPosition {0} e({1:F2}) i({2}) d({3})",
                     //    servoPosition, prevErr, integral, derivative));
+                    if (servoPosition < -100)
+                        servoPosition = 100;
+                    else if (servoPosition > 100)
+                        servoPosition = 100;
                     Program.Pilot.Send(new { Cmd = "SRVO", Value = servoPosition });
                     lastConeTime = nowTime;
                 }
@@ -131,13 +139,14 @@ namespace MiniMagellan
         public string GetStatus()
         {
             string t = string.Format("{0} Servo Position({1})", Enum.GetName(typeof(VisionState), SubState), servoPosition);
-            return ("^w" + t);
+            return ("^c" + t);
         }
 
-        public static void _T(String t)
+        private void _T(string t)
         {
-            Trace.WriteLine("Program::" + t);
+            xCon.WriteLine(t);
         }
+
 
         float Pid(float setPoint, float presentValue, float Kp, float Ki, float Kd,
             ref float previousError, ref float integral, ref float derivative, float dt, float errorSmooth)
