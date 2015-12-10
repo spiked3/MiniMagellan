@@ -10,15 +10,13 @@ namespace MiniMagellan
 {
     public class Navigation : IBehavior
     {
-        enum NavState { Rotating, MoveStart, Moving, Stopped, BumperReverse, ActionComplete };
+        enum NavState { Rotating, MoveStart, Moving, MovingToCone, Stopped, BumperReverse };
 
         public bool Lock { get; set; }
         NavState subState;
 
         bool EscapeInProgress = false;
         WayPoint EscapeWaypoint;
-
-        //public bool expectingBumper { get; set; }
 
         readonly double DEG_PER_RAD = 180 / Math.PI;
 
@@ -28,15 +26,23 @@ namespace MiniMagellan
         public WayPoint CurrentWayPoint;
         public double lastHdg;
 
-        // todo put these in robot
         public float hdgToWayPoint
         {
             get
             {
-                float theta = (float)(Math.Atan2( (CurrentWayPoint.X - Program.X), (CurrentWayPoint.Y - Program.Y) ));
+                float theta = (float)(Math.Atan2((CurrentWayPoint.X - Program.X), (CurrentWayPoint.Y - Program.Y)));
                 return (float)(theta * DEG_PER_RAD);
             }
         }
+
+        public float hdgToCone
+        {
+            get
+            {
+                return Program.H + (Program.Vis.servoPosition - 90);
+            }
+        }
+
         public float DistanceToWayPoint
         {
             get
@@ -73,10 +79,6 @@ namespace MiniMagellan
 
                     case RobotState.Navigating:
                         OnNavigating();
-                        break;
-
-                    case RobotState.Action:
-                        OnAction();
                         break;
                 }
             }
@@ -122,35 +124,29 @@ namespace MiniMagellan
             }
         }
 
-        private void OnAction()
-        {
-            // we get here by not having a bumper event in an action
-            throw new NotImplementedException("OnAction");
-
-            Program.Ar.EnterBallisticSection(this);
-
-            Thread.Sleep(1000);
-
-            Program.Ar.LeaveBallisticSection(this);
-            Program.State = RobotState.Idle;
-        }
-
         private void OnNavigating()
         {
             if (subState == NavState.MoveStart)
             {
                 Trace.t(cc.Norm, "Navigating MoveStart");
                 var NewSpeed = 50;
-                //if (DistanceToWayPoint < 5)
-                //    NewSpeed = 50;
-                //if (DistanceToWayPoint < 1)
-                //    NewSpeed = 40;
                 lastHdg = hdgToWayPoint;
                 Trace.t(cc.Norm, "Navigating Moving");
                 Program.Pilot.Send(new { Cmd = "MOV", Pwr = NewSpeed, Hdg = lastHdg, Dist = DistanceToWayPoint });
                 subState = NavState.Moving;
                 Thread.Sleep(500);
             }
+            else if (subState == NavState.MovingToCone)
+            {
+                subState = NavState.MovingToCone;
+                Program.Pilot.Send(new { Cmd = "MOV", Pwr = 25, Hdg = hdgToCone });
+            }
+        }
+
+        public void StartConeApproach()
+        {
+            subState = NavState.MovingToCone;
+            Program.Pilot.Send(new { Cmd = "MOV", Pwr = 25, Hdg = hdgToCone });
         }
 
         private void OnRotateComplete(dynamic json)
@@ -164,7 +160,12 @@ namespace MiniMagellan
 
         private void OnMoveComplete(dynamic json)
         {
-            if (subState == NavState.Moving && ((string)json.V).Equals("1"))
+            if (subState == NavState.MovingToCone)
+            {
+                // we didnt find the cone or else it would have been a bumper
+                throw new NotImplementedException("move complete for action");
+            }
+            else if (subState == NavState.Moving && ((string)json.V).Equals("1"))
             {
                 Trace.t(cc.Good, "Move completed");
                 Program.State = RobotState.Idle;

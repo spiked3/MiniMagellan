@@ -22,6 +22,8 @@ namespace MiniMagellan
         public static Pilot Pilot;
         public static WayPoints WayPoints;
         public static Arbitrator Ar;
+        public static Navigation Nav;
+        public static Vision Vis;
 
         public bool ConsoleLockFlag;
         MqttClient Mq;
@@ -95,9 +97,10 @@ namespace MiniMagellan
             Ar = new Arbitrator();
 
             // add behaviors
-            Navigation Nav = new Navigation();
+            Nav = new Navigation();
             Ar.AddBehavior("Navigation", Nav);
-            Ar.AddBehavior("Vision", new Vision());
+            Vis = new Vision();
+            Ar.AddBehavior("Vision", Vis);
 
             int telementryIdx = 0;
 
