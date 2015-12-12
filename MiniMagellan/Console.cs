@@ -27,6 +27,12 @@ namespace MiniMagellan
 
         public static int Write(string input)
         {
+#if DEBUG
+            System.Diagnostics.Trace.Write(input);
+#else
+            // todo log to file
+#endif
+
             int i = 0, StringSize = 0;
             lock (consoleLock)
             {

@@ -10,7 +10,7 @@ namespace MiniMagellan
 {
     public class Navigation : IBehavior
     {
-        enum NavState { Rotating, MoveStart, Moving, MovingToCone, Stopped, BumperReverse };
+        enum NavState { Rotating, MoveStart, Moving, MovingToConeStart, Stopped, BumperReverse, MovingToCone };
 
         public bool Lock { get; set; }
         NavState subState;
@@ -25,6 +25,8 @@ namespace MiniMagellan
 
         public WayPoint CurrentWayPoint;
         public double lastHdg;
+
+        readonly int moveSpeed = 40;
 
         public float hdgToWayPoint
         {
@@ -57,6 +59,8 @@ namespace MiniMagellan
         public Navigation()
         {
             Program.Pilot.OnPilotReceive += PilotReceive;
+            Program.Vis.OnLostCone += Vis_OnLostCone;
+            Program.Vis.OnFoundCone += Vis_OnFoundCone;
         }
 
         public void TaskRun()
@@ -81,6 +85,8 @@ namespace MiniMagellan
                         OnNavigating();
                         break;
                 }
+                // throttle loops
+                Delay(100).Wait();      // todo is this working?
             }
 
             Program.Pilot.Send(new { Cmd = "ESC", Value = 0 });
@@ -96,7 +102,7 @@ namespace MiniMagellan
                 Trace.t(cc.Norm, "Finished");
                 Program.State = RobotState.Finished;
                 CurrentWayPoint = null;
-                Program.Pilot.Send(new { Cmd = "ROT", Hdg = 0 }); // todo for convience
+                Program.Pilot.Send(new { Cmd = "ROT", Hdg = 0 }); // todo for convience, rotate to 0 at end
             }
             else
             {
@@ -119,34 +125,55 @@ namespace MiniMagellan
                 else
                 {
                     Trace.t(cc.Norm, "Moving");
-                    subState = NavState.Moving;
+                    subState = NavState.MoveStart;
                 }
             }
         }
 
-        private void OnNavigating()
+        void Vis_OnFoundCone(object sender, EventArgs e)
+        {
+            //Trace.t(cc.Warn, "Vis_OnFoundCone");
+            if (subState == NavState.Moving && CurrentWayPoint.isAction && DistanceToWayPoint < 5)
+                subState = NavState.MovingToConeStart;
+        }
+
+        void Vis_OnLostCone(object sender, EventArgs e)
+        {
+            //Trace.t(cc.Warn, "Vis_OnLostCone");
+            if (subState == NavState.MovingToConeStart)
+            {
+                System.Diagnostics.Debugger.Break();
+            }
+        }
+        TimeSpan moveCmdInterval = new TimeSpan(0, 0, 2);
+        TimeSpan ms = new TimeSpan(0, 0, 0, 0, 1);
+        DateTime lastMoveCmdAt = DateTime.Now;
+        void OnNavigating()
         {
             if (subState == NavState.MoveStart)
             {
                 Trace.t(cc.Norm, "Navigating MoveStart");
-                var NewSpeed = 50;
-                lastHdg = hdgToWayPoint;
-                Trace.t(cc.Norm, "Navigating Moving");
-                Program.Pilot.Send(new { Cmd = "MOV", Pwr = NewSpeed, Hdg = lastHdg, Dist = DistanceToWayPoint });
-                subState = NavState.Moving;
-                Thread.Sleep(500);
-            }
-            else if (subState == NavState.MovingToCone)
-            {
-                subState = NavState.MovingToCone;
-                Program.Pilot.Send(new { Cmd = "MOV", Pwr = 25, Hdg = hdgToCone });
-            }
-        }
 
-        public void StartConeApproach()
-        {
-            subState = NavState.MovingToCone;
-            Program.Pilot.Send(new { Cmd = "MOV", Pwr = 25, Hdg = hdgToCone });
+                lastHdg = hdgToWayPoint;
+                Program.Pilot.Send(new { Cmd = "MOV", Pwr = moveSpeed, Hdg = hdgToWayPoint, Dist = DistanceToWayPoint });
+                lastMoveCmdAt = DateTime.Now;
+                subState = NavState.Moving;
+            }
+            else if (subState == NavState.Moving)
+            {
+                if (DateTime.Now > lastMoveCmdAt + moveCmdInterval)
+                {
+                    Program.Pilot.Send(new { Cmd = "MOV", Pwr = moveSpeed, Hdg = hdgToWayPoint, Dist = DistanceToWayPoint });
+                    lastMoveCmdAt = DateTime.Now;
+                }
+            }
+
+            //else if (subState == NavState.MovingToConeStart)
+            //{
+            //    Trace.t(cc.Norm, string.Format("Navigating MoveToConeStart hdg({0})", hdgToCone));
+            //    Program.Pilot.Send(new { Cmd = "MOV", Pwr = 20, Hdg = hdgToCone });
+            //    subState = NavState.MovingToCone;
+            //}
         }
 
         private void OnRotateComplete(dynamic json)
@@ -160,7 +187,7 @@ namespace MiniMagellan
 
         private void OnMoveComplete(dynamic json)
         {
-            if (subState == NavState.MovingToCone)
+            if (subState == NavState.MovingToConeStart)
             {
                 // we didnt find the cone or else it would have been a bumper
                 throw new NotImplementedException("move complete for action");
@@ -258,6 +285,26 @@ namespace MiniMagellan
             "No Waypoint" :
             string.Format("^cCurrentWayPoint({0:F1},{1:F1})\nHeadingToWp({2:F1})\nDistanceToWp({3:F3})\nEscapeInProgress({4})",
             CurrentWayPoint.X, CurrentWayPoint.Y, hdgToWayPoint, DistanceToWayPoint, EscapeInProgress);
+        }
+
+        // this is built in to net 4.5 - but Mono is .net 4.0
+        static TaskCompletionSource<bool> tcs;
+        static System.Timers.Timer timer;
+        public static Task Delay(double milliseconds)
+        {
+            if (timer == null)
+            {
+                tcs = new TaskCompletionSource<bool>();
+                timer = new System.Timers.Timer { AutoReset = false };
+                timer.Elapsed += (obj, args) =>
+                {
+                    tcs.TrySetResult(true);
+                };
+            }
+
+            timer.Interval = milliseconds;
+            timer.Start();
+            return tcs.Task;
         }
     }
 }

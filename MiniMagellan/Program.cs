@@ -14,7 +14,6 @@ namespace MiniMagellan
 {
     public enum RobotState { Init, Navigating, Searching, Action, Idle, Finished, UnExpectedBumper, Shutdown, eStop };
 
-
     public class Program 
     {
         public static RobotState State = RobotState.Init;
@@ -81,7 +80,6 @@ namespace MiniMagellan
             else
                 xCon.WriteLine("Windows");
 
-
             Console.CancelKeyPress += Console_CancelKeyPress;
             Console.TreatControlCAsInput = false;
 
@@ -97,10 +95,11 @@ namespace MiniMagellan
             Ar = new Arbitrator();
 
             // add behaviors
+            Vis = new Vision();     // start vision first because Navigation listens to events
+            Ar.AddBehavior("Vision", Vis);
+
             Nav = new Navigation();
             Ar.AddBehavior("Navigation", Nav);
-            Vis = new Vision();
-            Ar.AddBehavior("Vision", Vis);
 
             int telementryIdx = 0;
 
@@ -109,7 +108,7 @@ namespace MiniMagellan
             // menu
             Dictionary<char, string> menu = new Dictionary<char, string>() {
                     { 'F', "Fake waypoints" },
-                    { 'C', "Config/reset" },
+                    { 'E', "rEset" },
                     { 'A', "Autonomous Start" },
                     { 'S', "State" },
                     { 'R', ".Rotate" },
@@ -132,11 +131,12 @@ namespace MiniMagellan
                     case 'F':
                         FakeWayPoints();
                         break;
-                    case 'C':
-                        configPilot();
+                    case 'E':
+                        resetPilot();
                         break;
                     case 'A':
                         Trace.t(cc.Warn, string.Format("^yStarting autonomous @ {0}", DateTime.Now.ToLongTimeString()));
+                        configPilot();
                         State = RobotState.Idle;
                         break;
                     case 'S':
@@ -253,17 +253,24 @@ namespace MiniMagellan
             Trace.t(cc.Good, "WayPoint received and loaded");
         }
 
+        static void resetPilot()
+        {
+            Pilot.Send(new { Cmd = "RESET", Hdg = ResetHeading });
+            Pilot.Send(new { Cmd = "ESC", Value = 0 });
+        }
+
         static void configPilot()
         {
-            Pilot.Send(new { Cmd = "CONFIG", TPM = 332, MMX = 450, StrRv = -1 });
+            Pilot.Send(new { Cmd = "CONFIG", TPM = 353, MMX = 450, StrRv = -1 });
             Pilot.Send(new { Cmd = "CONFIG", M1 = new int[] { 1, -1 }, M2 = new int[] { -1, 1 } });
+            Pilot.Send(new { Cmd = "CONFIG", HPID = new float[] { 75f, .8f, .04f } });
+
             Pilot.Send(new { Cmd = "RESET", Hdg = ResetHeading });
             Pilot.Send(new { Cmd = "ESC", Value = 1 });
         }
 
         static void PilotReceive(dynamic json)
         {
-            // todo if Bumper && !Action it is a bad thing
             switch ((string)json.T)
             {
                 case "Pose":

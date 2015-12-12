@@ -21,21 +21,23 @@ namespace MiniMagellan
         enum VisionState { Idle, Run };
 
         VisionState SubState = VisionState.Idle;
-        public static float ConeConfidence = 0;
-
-        // working ok, probably needs tweaking to cones and sunlight
-        float kP = 0.2F, kI = 0.3F, kD = 0.001F;
-        float prevErr, integral, derivative;
-        public int servoPosition = 90;
-
-        DateTime lastTime = DateTime.Now;
-        DateTime lostTime, foundTime, lastConeTime;
 
         enum ConeState { Lost, LostWait, Found };
         ConeState coneFlag = ConeState.Lost;
 
+        public static float ConeConfidence = 0;
+
+        public event EventHandler OnLostCone;
+        public event EventHandler OnFoundCone;
+
+        DateTime lastTime = DateTime.Now, coneLastSeenTime;
         TimeSpan lostWaitTime = new TimeSpan(0, 0, 2);    // 2 seconds
 
+        // working ok, probably needs tweaking to cones and sunlight
+        float kP = 0.15F, kI = 0.1F, kD = 0;
+        float prevErr, integral, derivative;
+        public int servoPosition = 90;
+        
         public void TaskRun()
         {
             Trace.t(cc.Norm, "Vision TaskRun started");
@@ -61,14 +63,10 @@ namespace MiniMagellan
                 while (Lock)
                     Thread.SpinWait(100);
 
-                switch (SubState)
-                {
-                    case VisionState.Run:
-                        if (coneFlag != ConeState.LostWait && DateTime.Now > lastConeTime + lostWaitTime)
-                            if (coneFlag != ConeState.Lost)
-                                LostCone();
-                        break;
-                }
+                if (SubState == VisionState.Run)
+                    if (coneFlag != ConeState.Lost && DateTime.Now > coneLastSeenTime + lostWaitTime)
+                        LostCone();
+
                 Thread.Sleep(200);
             }
 
@@ -80,26 +78,25 @@ namespace MiniMagellan
 
         private void LostCone()
         {
-            lostTime = DateTime.Now;
             ConeConfidence = 0;
-
             coneFlag = ConeState.Lost;
             Trace.t(cc.Warn, "Cone lost"); Console.Beep(); Console.Beep();
+
             servoPosition = 90;
             Program.Pilot.Send(new { Cmd = "SRVO", Value = servoPosition });
+            if (OnLostCone != null)
+                OnLostCone(this, null);
         }
 
         private void FoundCone()
         {
-            foundTime = DateTime.Now;
-
             coneFlag = ConeState.Found;
             Trace.t(cc.Good, "Cone Found"); Console.Beep();
+
             prevErr = integral = derivative = 0;
 
-            // todo should start based on how confident we are, which could be related to size?
-            if (Program.Nav.CurrentWayPoint != null && Program.Nav.CurrentWayPoint.isAction)
-                Program.Nav.StartConeApproach();
+            if (OnFoundCone != null)
+                OnFoundCone(this, null);
         }
 
         void PixyMqRecvd(object sender, MqttMsgPublishEventArgs e)
@@ -108,40 +105,38 @@ namespace MiniMagellan
             if (SubState == VisionState.Run)
             {
                 dynamic a = JsonConvert.DeserializeObject(Encoding.UTF8.GetString(e.Message));
-                int middleX = a.X + (a.Width / 2);      // 160 is pixy center
+                int middle = a.X + (a.Width / 2);      // 160 is pixy center
                 DateTime nowTime = DateTime.Now;
 
                 // lots or no rects is a good indication we dont have the cone
                 // after some elapsed time of no cone, return servo to 90
 
-                ConeConfidence = 1 / (int)a.Count;   // todo need to consider cone size, and time since last msg (somewhere else)
+                ConeConfidence = 1 / (int)a["Count"];   // todo need to consider cone size
 
                 if (ConeConfidence < .49)
-                {   // dont have cone
-                     if (coneFlag == ConeState.Found)
-                    { // we just lost it
-                        lostTime = nowTime;
+                {
+                    if (coneFlag == ConeState.Found)
                         coneFlag = ConeState.LostWait;
-                    }
                 }
                 else
-                {   // have cone
-                    lastConeTime = nowTime;
+                {
+                    coneLastSeenTime = nowTime;
 
                     if (coneFlag != ConeState.Found)
-                        if (coneFlag == ConeState.Lost)
+                        if (coneFlag == ConeState.LostWait)
+                            coneFlag = ConeState.Found;
+                        else
                             FoundCone();
-
-                    if (coneFlag == ConeState.Found)
+                    else if (coneFlag == ConeState.Found)
                     {
                         float et = (nowTime - lastTime).Milliseconds / 1000F;
-                        servoPosition -= (int)Pid(160, middleX, kP, kI, kD, ref prevErr, ref integral, ref derivative, et, .8F);
-                        //xCon.WriteLine(string.Format("^wSteering srvoPosition {0} e({1:F2}) i({2}) d({3})",
-                        //    servoPosition, prevErr, integral, derivative));
-                        if (servoPosition < -100)
-                            servoPosition = 100;
-                        else if (servoPosition > 100)
-                            servoPosition = 100;
+                        servoPosition -= (int)Pid(160, middle, kP, kI, kD, ref prevErr, ref integral, ref derivative, et, .8F);
+                        //Trace.t(cc.Norm, string.Format("Steering srvoPosition {0} e({1:F2}) i({2}) d({3})", servoPosition, prevErr, integral, derivative));
+                        if (servoPosition < 0)
+                            servoPosition = 0;
+                        else if (servoPosition > 180)
+                            servoPosition = 180;
+
                         Program.Pilot.Send(new { Cmd = "SRVO", Value = servoPosition });
                     }
                 }
@@ -166,6 +161,7 @@ namespace MiniMagellan
             if (integral < -10)
                 integral = -10;
             derivative = (error - previousError) / dt;
+            derivative = derivative > 100 ? 100 : derivative < -100 ? 100 : derivative;         // constrain derivative
             float output = Kp * error + Ki * integral + Kd * derivative;
             previousError = error;
             return output;
