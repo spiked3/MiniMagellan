@@ -91,12 +91,24 @@ namespace Spiked3
 
         private void MqttMsgPublishReceived(object sender, MqttMsgPublishEventArgs e)
         {
+            dynamic json;
+            string j = Encoding.UTF8.GetString(e.Message);
             switch (e.Topic)
             {
                 case "robot1":
-                    string j = Encoding.UTF8.GetString(e.Message);
+
+                    try
+                    {
+                        json = JsonConvert.DeserializeObject(j);
+                    }
+                    catch (Exception ex)
+                    {
+                        Trace.WriteLine(string.Format("json deserialize threw exception {0}", ex.Message));
+                        return;
+                    }
+
                     if (OnPilotReceive != null)
-                        OnPilotReceive(JsonConvert.DeserializeObject(j));
+                        OnPilotReceive(json);
                     break;
             }
         }

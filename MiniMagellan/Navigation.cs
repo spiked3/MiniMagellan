@@ -2,17 +2,14 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using Spiked3;
 
 namespace MiniMagellan
 {
-    public class Navigation : IBehavior
+    public class Navigation
     {
-        enum NavState { Rotating, MoveStart, Moving, MovingToConeStart, Stopped, BumperReverse, MovingToCone };
-
-        public bool Lock { get; set; }
+        enum NavState { Rotating, MoveStart, Moving, Stopped, BumperReverse, ApproachWait };
         NavState subState;
 
         bool EscapeInProgress = false;
@@ -26,7 +23,11 @@ namespace MiniMagellan
         public WayPoint CurrentWayPoint;
         public double lastHdg;
 
-        readonly int moveSpeed = 40;
+        readonly int moveSpeed = 30;
+
+        TimeSpan moveCmdInterval = new TimeSpan(0, 0, 2);
+        TimeSpan ms = new TimeSpan(0, 0, 0, 0, 1);
+        DateTime lastMoveCmdAt = DateTime.Now;
 
         public float hdgToWayPoint
         {
@@ -34,14 +35,6 @@ namespace MiniMagellan
             {
                 float theta = (float)(Math.Atan2((CurrentWayPoint.X - Program.X), (CurrentWayPoint.Y - Program.Y)));
                 return (float)(theta * DEG_PER_RAD);
-            }
-        }
-
-        public float hdgToCone
-        {
-            get
-            {
-                return Program.H + (Program.Vis.servoPosition - 90);
             }
         }
 
@@ -59,7 +52,6 @@ namespace MiniMagellan
         public Navigation()
         {
             Program.Pilot.OnPilotReceive += PilotReceive;
-            Program.Vis.OnLostCone += Vis_OnLostCone;
             Program.Vis.OnFoundCone += Vis_OnFoundCone;
         }
 
@@ -72,9 +64,6 @@ namespace MiniMagellan
             // if finished, exit task
             while (Program.State != RobotState.Shutdown)
             {
-                while (Lock)
-                    Thread.SpinWait(100);
-
                 switch (Program.State)
                 {
                     case RobotState.Idle:
@@ -85,8 +74,9 @@ namespace MiniMagellan
                         OnNavigating();
                         break;
                 }
+
                 // throttle loops
-                Delay(100).Wait();      // todo is this working?
+                Program.Delay(1000).Wait();      // todo is this working?
             }
 
             Program.Pilot.Send(new { Cmd = "ESC", Value = 0 });
@@ -95,6 +85,9 @@ namespace MiniMagellan
 
         void OnIdle()
         {
+            if (subState == NavState.ApproachWait)
+                System.Diagnostics.Debugger.Break();
+
             Trace.t(cc.Norm, "OnIdle");
             if (Program.WayPoints == null || Program.WayPoints.Count == 0)
             {
@@ -133,29 +126,36 @@ namespace MiniMagellan
         void Vis_OnFoundCone(object sender, EventArgs e)
         {
             //Trace.t(cc.Warn, "Vis_OnFoundCone");
-            if (subState == NavState.Moving && CurrentWayPoint.isAction && DistanceToWayPoint < 5)
-                subState = NavState.MovingToConeStart;
-        }
-
-        void Vis_OnLostCone(object sender, EventArgs e)
-        {
-            //Trace.t(cc.Warn, "Vis_OnLostCone");
-            if (subState == NavState.MovingToConeStart)
+            if (CurrentWayPoint != null)
             {
-                System.Diagnostics.Debugger.Break();
+                if (subState == NavState.Moving && CurrentWayPoint.isAction && DistanceToWayPoint < 1)
+                    BeginApproach();
             }
         }
-        TimeSpan moveCmdInterval = new TimeSpan(0, 0, 2);
-        TimeSpan ms = new TimeSpan(0, 0, 0, 0, 1);
-        DateTime lastMoveCmdAt = DateTime.Now;
+
+        void BeginApproach()
+        {
+            Trace.t(cc.Warn, "starting and waiting for Approach task");
+            var T = new Task(new Approach().TaskRun);
+            subState = NavState.ApproachWait;
+            T.Start();
+            T.Wait();
+            Trace.t(cc.Good, "Approach completed");
+        }
+
         void OnNavigating()
         {
             if (subState == NavState.MoveStart)
             {
                 Trace.t(cc.Norm, "Navigating MoveStart");
-
+                if (CurrentWayPoint.isAction)
+                    Trace.t(cc.Warn, "isAction");
                 lastHdg = hdgToWayPoint;
-                Program.Pilot.Send(new { Cmd = "MOV", Pwr = moveSpeed, Hdg = hdgToWayPoint, Dist = DistanceToWayPoint });
+                if (CurrentWayPoint.isAction)
+                    Program.Pilot.Send(new { Cmd = "MOV", Pwr = moveSpeed, Hdg = hdgToWayPoint, Dist = DistanceToWayPoint - .6 });
+                else
+                    Program.Pilot.Send(new { Cmd = "MOV", Pwr = moveSpeed, Hdg = hdgToWayPoint, Dist = DistanceToWayPoint });
+
                 lastMoveCmdAt = DateTime.Now;
                 subState = NavState.Moving;
             }
@@ -167,13 +167,6 @@ namespace MiniMagellan
                     lastMoveCmdAt = DateTime.Now;
                 }
             }
-
-            //else if (subState == NavState.MovingToConeStart)
-            //{
-            //    Trace.t(cc.Norm, string.Format("Navigating MoveToConeStart hdg({0})", hdgToCone));
-            //    Program.Pilot.Send(new { Cmd = "MOV", Pwr = 20, Hdg = hdgToCone });
-            //    subState = NavState.MovingToCone;
-            //}
         }
 
         private void OnRotateComplete(dynamic json)
@@ -187,12 +180,7 @@ namespace MiniMagellan
 
         private void OnMoveComplete(dynamic json)
         {
-            if (subState == NavState.MovingToConeStart)
-            {
-                // we didnt find the cone or else it would have been a bumper
-                throw new NotImplementedException("move complete for action");
-            }
-            else if (subState == NavState.Moving && ((string)json.V).Equals("1"))
+            if (subState == NavState.Moving && ((string)json.V).Equals("1"))
             {
                 Trace.t(cc.Good, "Move completed");
                 Program.State = RobotState.Idle;
@@ -201,60 +189,40 @@ namespace MiniMagellan
 
         void OnBumperEvent(dynamic json)
         {
-            if (((string)json.V).Equals("1"))
+            //? should not get here during approach, because our spin flag will be set
+            if (((string)json.V).Equals("1") )
             {
                 // obstacle!!!!!
-                if (CurrentWayPoint.isAction)
+                Trace.t(cc.Bad, "Unexpected Bumper");
+                Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
+                subState = NavState.BumperReverse;
+
+                Program.Pilot.Send(new { Cmd = "Mov", Pwr = -30, Dist = .5F });
+                Program.Pilot.waitForEvent();
+
+                // todo obstacle during escape
+                Program.State = RobotState.eStop;
+
+                // todo add avoidance
+                return;
+
+                // save current waypoint
+                // if !escaping:
+                //      (re)push current
+                // push new Waypoint for avoid 
+                // escaping = true
+
+                if (!EscapeInProgress)
                 {
-                    Trace.t(cc.Good, "Expected Bumper");
-                    Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
-
-                    // backup
-                    Program.Ar.EnterBallisticSection(this);
-
-                    Program.Pilot.Send(new { Cmd = "Mov", M1 = -40, M2 = -40 });
-                    Thread.Sleep(1000);     // 1 second reverse
-                    Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
-                    Program.State = RobotState.Idle;        // action complete
-
-                    Program.Ar.LeaveBallisticSection(this);
-                }
-                else
-                {
-                    Trace.t(cc.Bad, "Unexpected Bumper");
-                    Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
-                    subState = NavState.BumperReverse;
-
-                    // backup
-                    Program.Ar.EnterBallisticSection(this);
-
-                    Program.Pilot.Send(new { Cmd = "Mov", M1 = -40, M2 = -40 });
-                    Thread.Sleep(1000);     // 1 second reverse
-                    Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
-
-                    // todo obstacle during escape
-                    Program.State = RobotState.eStop;
-                    Program.Ar.LeaveBallisticSection(this);
-#if !__MonoCS__
-                    //Debugger.Break();
-#endif
-                    return;
-
-                    // save current waypoint
-                    // re push, dont repush current if already escaping
-                    // push new Waypoint for avoid 
-
-                    EscapeWaypoint = CurrentWayPoint;
+                    Program.WayPoints.Push(CurrentWayPoint);
                     EscapeInProgress = true;
-
-                    Trace.t(cc.Warn, "Inserting Fake Escape WayPoint");
-
-                    Program.WayPoints.Push(EscapeWaypoint);
-
-                    Program.WayPoints.Push(new WayPoint { X = 0.0F, Y = 0.0F, isAction = true });
-
-                    Program.State = RobotState.Idle;
+                    EscapeWaypoint = CurrentWayPoint;       // when we get there we'll know the escape worked
                 }
+
+                WayPoint bypassWaypoint = new WayPoint { };  // todo  finish
+                Program.WayPoints.Push(bypassWaypoint);
+
+                Program.State = RobotState.Idle;
             }
         }
 
@@ -287,24 +255,15 @@ namespace MiniMagellan
             CurrentWayPoint.X, CurrentWayPoint.Y, hdgToWayPoint, DistanceToWayPoint, EscapeInProgress);
         }
 
-        // this is built in to net 4.5 - but Mono is .net 4.0
-        static TaskCompletionSource<bool> tcs;
-        static System.Timers.Timer timer;
-        public static Task Delay(double milliseconds)
+        static int thisInstant
         {
-            if (timer == null)
+            get
             {
-                tcs = new TaskCompletionSource<bool>();
-                timer = new System.Timers.Timer { AutoReset = false };
-                timer.Elapsed += (obj, args) =>
-                {
-                    tcs.TrySetResult(true);
-                };
+                DateTime n = DateTime.Now;
+                return n.Second * 1000 + n.Millisecond;
             }
-
-            timer.Interval = milliseconds;
-            timer.Start();
-            return tcs.Task;
         }
+
+
     }
 }

@@ -12,29 +12,27 @@ using uPLibrary.Networking.M2Mqtt.Messages;
 
 namespace MiniMagellan
 {
-    public class Vision : IBehavior
+    public class Vision
     {
         MqttClient Mq;
 
-        public bool Lock { get; set; }
+        // todo Sweep is not used/implemented yet
+        public enum VisionState { Idle, Run, Sweep };
 
-        enum VisionState { Idle, Run };
+        public VisionState SubState = VisionState.Idle;
 
-        VisionState SubState = VisionState.Idle;
-
-        enum ConeState { Lost, LostWait, Found };
-        ConeState coneFlag = ConeState.Lost;
-
-        public static float ConeConfidence = 0;
+        public enum ConeState { Lost, LostWait, Found };
+        public ConeState coneFlag = ConeState.Lost;
 
         public event EventHandler OnLostCone;
         public event EventHandler OnFoundCone;
 
-        DateTime lastTime = DateTime.Now, coneLastSeenTime;
-        TimeSpan lostWaitTime = new TimeSpan(0, 0, 2);    // 2 seconds
+        DateTime pidCycleTime = new DateTime(0);
+        DateTime lastSeenTime = new DateTime(0);
+        TimeSpan lostWaitTime = new TimeSpan(0, 0, 0, 1);
 
-        // working ok, probably needs tweaking to cones and sunlight
-        float kP = 0.15F, kI = 0.1F, kD = 0;
+        // servo PID
+        float kP = 0.1F, kI = 0.2F, kD = 0.01F;
         float prevErr, integral, derivative;
         public int servoPosition = 90;
         
@@ -60,14 +58,13 @@ namespace MiniMagellan
             // if finished, exit task
             while (Program.State != RobotState.Shutdown)
             {
-                while (Lock)
-                    Thread.SpinWait(100);
-
                 if (SubState == VisionState.Run)
-                    if (coneFlag != ConeState.Lost && DateTime.Now > coneLastSeenTime + lostWaitTime)
+                    if (coneFlag != ConeState.Lost && DateTime.Now > lastSeenTime + lostWaitTime)
                         LostCone();
 
-                Thread.Sleep(200);
+                Program.Delay(100).Wait();
+
+                // todo - if navigation is turning, we would expect to need to adjust the servo with the turn
             }
 
             Trace.t(cc.Warn, "Vision exiting");
@@ -78,12 +75,11 @@ namespace MiniMagellan
 
         private void LostCone()
         {
-            ConeConfidence = 0;
             coneFlag = ConeState.Lost;
-            Trace.t(cc.Warn, "Cone lost"); Console.Beep(); Console.Beep();
+            Trace.t(cc.Warn, "Vision::Cone lost"); Console.Beep();
 
             servoPosition = 90;
-            Program.Pilot.Send(new { Cmd = "SRVO", Value = servoPosition });
+            Program.Pilot.Send(new { Cmd = "SRVO", Value = 90 });
             if (OnLostCone != null)
                 OnLostCone(this, null);
         }
@@ -91,7 +87,7 @@ namespace MiniMagellan
         private void FoundCone()
         {
             coneFlag = ConeState.Found;
-            Trace.t(cc.Good, "Cone Found"); Console.Beep();
+            Trace.t(cc.Good, "Vision::Cone Found"); Console.Beep();
 
             prevErr = integral = derivative = 0;
 
@@ -105,49 +101,51 @@ namespace MiniMagellan
             if (SubState == VisionState.Run)
             {
                 dynamic a = JsonConvert.DeserializeObject(Encoding.UTF8.GetString(e.Message));
-                int middle = a.X + (a.Width / 2);      // 160 is pixy center
                 DateTime nowTime = DateTime.Now;
 
                 // lots or no rects is a good indication we dont have the cone
                 // after some elapsed time of no cone, return servo to 90
 
-                ConeConfidence = 1 / (int)a["Count"];   // todo need to consider cone size
 
-                if (ConeConfidence < .49)
-                {
-                    if (coneFlag == ConeState.Found)
-                        coneFlag = ConeState.LostWait;
-                }
+                if (1.0 / (int)a["Count"] < .49)
+                    switch (coneFlag)       // no cone
+                    {
+                        case ConeState.Found:
+                            coneFlag = ConeState.LostWait;
+                            break;
+                    }
                 else
                 {
-                    coneLastSeenTime = nowTime;
-
-                    if (coneFlag != ConeState.Found)
-                        if (coneFlag == ConeState.LostWait)
-                            coneFlag = ConeState.Found;
-                        else
-                            FoundCone();
-                    else if (coneFlag == ConeState.Found)
+                    lastSeenTime = nowTime;
+                    switch (coneFlag)   // cone
                     {
-                        float et = (nowTime - lastTime).Milliseconds / 1000F;
-                        servoPosition -= (int)Pid(160, middle, kP, kI, kD, ref prevErr, ref integral, ref derivative, et, .8F);
-                        //Trace.t(cc.Norm, string.Format("Steering srvoPosition {0} e({1:F2}) i({2}) d({3})", servoPosition, prevErr, integral, derivative));
-                        if (servoPosition < 0)
-                            servoPosition = 0;
-                        else if (servoPosition > 180)
-                            servoPosition = 180;
+                        case ConeState.Lost:
+                            FoundCone();
+                            break;
+                        case ConeState.LostWait:        // todo code smell
+                            coneFlag = ConeState.Found;
+                            goto case ConeState.Found;
+                        case ConeState.Found:
+                            float et = (float)((nowTime - pidCycleTime).Milliseconds) / 1000;
+                            servoPosition -= (int)Pid(160F, (float)(a.Center), kP, kI, kD, ref prevErr, ref integral, ref derivative, et, .8F);
+                            //Trace.t(cc.Norm, string.Format("Steering srvoPosition {0} e({1:F2}) i({2}) d({3})", servoPosition, prevErr, integral, derivative));
+                            if (servoPosition < 0)
+                                servoPosition = 0;
+                            else if (servoPosition > 180)
+                                servoPosition = 180;
 
-                        Program.Pilot.Send(new { Cmd = "SRVO", Value = servoPosition });
+                            Program.Pilot.Send(new { Cmd = "SRVO", Value = servoPosition });
+                            break;
                     }
+                    pidCycleTime = nowTime;
                 }
-
-                lastTime = nowTime;
             }
         }
 
         public string GetStatus()
         {
-            return string.Format("{0} Servo Position({1})", Enum.GetName(typeof(VisionState), SubState), servoPosition);            
+            return string.Format("{0} SubState({2}) Servo Position({1})", 
+                    Enum.GetName(typeof(VisionState), SubState), servoPosition, Enum.GetName(typeof(ConeState), coneFlag));
         }
 
         float Pid(float setPoint, float presentValue, float Kp, float Ki, float Kd,
@@ -155,13 +153,10 @@ namespace MiniMagellan
         {
             float error = setPoint - presentValue;
             error = (float)(errorSmooth * error + (1.0 - errorSmooth) * previousError);  // complimentry filter smoothing
-            integral += error * dt;
-            if (integral > 10)
-                integral = 10;
-            if (integral < -10)
-                integral = -10;
+            integral = integral + error * dt;
             derivative = (error - previousError) / dt;
-            derivative = derivative > 100 ? 100 : derivative < -100 ? 100 : derivative;         // constrain derivative
+            //derivative = derivative > 100 ? 100 : derivative < -100 ? 100 : derivative;         // constrain derivative
+            derivative = float.IsNaN(derivative) ? 0 : derivative;
             float output = Kp * error + Ki * integral + Kd * derivative;
             previousError = error;
             return output;

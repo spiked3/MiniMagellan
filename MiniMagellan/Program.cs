@@ -12,7 +12,7 @@ using Spiked3;
 
 namespace MiniMagellan
 {
-    public enum RobotState { Init, Navigating, Searching, Action, Idle, Finished, UnExpectedBumper, Shutdown, eStop };
+    public enum RobotState { Init, Navigating, Idle, Finished, Shutdown, eStop };
 
     public class Program 
     {
@@ -20,16 +20,16 @@ namespace MiniMagellan
         public static float X, Y, H;
         public static Pilot Pilot;
         public static WayPoints WayPoints;
-        public static Arbitrator Ar;
         public static Navigation Nav;
         public static Vision Vis;
+        public static Task taskVis, taskNav;
 
         public bool ConsoleLockFlag;
         MqttClient Mq;
 
-        public static string PilotString = "localhost"; // use cmd argument -pilot to set differently
+        public static string PilotString = "127.0.0.1"; // use cmd argument -pilot to set differently
 
-        public static float ResetHeading { get; private set; }
+        public static float ResetHeading;
 
         char GetCharChoice(Dictionary<char, string> choices)
         {
@@ -92,14 +92,13 @@ namespace MiniMagellan
             Pilot = Pilot.Factory(PilotString);
             Pilot.OnPilotReceive += PilotReceive;
 
-            Ar = new Arbitrator();
-
-            // add behaviors
-            Vis = new Vision();     // start vision first because Navigation listens to events
-            Ar.AddBehavior("Vision", Vis);
+            Vis = new Vision();     // start vision first because Navigation listens to vision events
+            taskVis = new Task(Vis.TaskRun, TaskCreationOptions.LongRunning);
+            taskVis.Start();
 
             Nav = new Navigation();
-            Ar.AddBehavior("Navigation", Nav);
+            taskNav = new Task(Nav.TaskRun, TaskCreationOptions.LongRunning);
+            taskNav.Start();
 
             int telementryIdx = 0;
 
@@ -181,10 +180,11 @@ namespace MiniMagellan
 
         private void ShutDown()
         {
-            Trace.t(cc.Warn, "Kernel Stopping");
             State = RobotState.Shutdown;
             Pilot.Send(new { Cmd = "ESC", Value = 0 });
-            System.Threading.Thread.Sleep(500);
+            Trace.t(cc.Warn, "Kernel Stopping");
+            taskVis.Wait();
+            taskNav.Wait();
             Pilot.Close();
         }
 
@@ -194,11 +194,9 @@ namespace MiniMagellan
             {
                 Trace.t(cc.Status, string.Format("State({0}) X({1:F3}) Y({2:F3}) H({3:F1}) WayPoints({4})",
                     State, X, Y, H, WayPoints != null ? WayPoints.Count.ToString() : "None"));
-                Ar.behaviorNameMap.All(kv =>
-                {
-                    Trace.t(cc.Status, string.Format("{0}: {1}", kv.Value, kv.Key.GetStatus()));
-                    return true;
-                });
+
+                Trace.t(cc.Status, string.Format("{0}: {1}", "Navigation", Nav.GetStatus()));
+
                 Trace.t(cc.Status, "Waypoints:");
                 if (WayPoints != null)
                     WayPoints.All(wp =>
@@ -206,6 +204,8 @@ namespace MiniMagellan
                         Trace.t(cc.Status, string.Format("[{0:F3}, {1:F3}{2}]", wp.X, wp.Y, (wp.isAction ? ", Action" : "")));
                         return true;
                     });
+
+                Trace.t(cc.Status, string.Format("{0}: {1}", "Vision", Vis.GetStatus()));
             }
         }
 
@@ -285,6 +285,16 @@ namespace MiniMagellan
                 case "Debug":
                     break;
             }
+        }
+
+        // this is built in to net 4.5 - but Mono is .net 4.0
+        public static Task Delay(double milliseconds)
+        {
+            TaskCompletionSource<bool> tcs = new TaskCompletionSource<bool>();
+            System.Timers.Timer timer = new System.Timers.Timer { AutoReset = false, Interval = milliseconds };
+            timer.Elapsed += (obj, args) => { tcs.TrySetResult(true); };
+            timer.Start();
+            return tcs.Task;
         }
     }
 }
