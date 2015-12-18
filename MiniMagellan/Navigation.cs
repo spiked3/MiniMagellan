@@ -9,7 +9,7 @@ namespace MiniMagellan
 {
     public class Navigation
     {
-        public enum NavState { Rotating, MoveStart, Moving, Stopped, BumperReverse, ApproachWait };
+        public enum NavState { Rotating, MoveStart, Moving, Stopped, BumperReverse };
         public NavState subState;
 
         bool EscapeInProgress = false;
@@ -85,9 +85,6 @@ namespace MiniMagellan
 
         void OnIdle()
         {
-            if (subState == NavState.ApproachWait)
-                System.Diagnostics.Debugger.Break();
-
             Trace.t(cc.Norm, "OnIdle");
             if (Program.WayPoints == null || Program.WayPoints.Count == 0)
             {
@@ -125,36 +122,53 @@ namespace MiniMagellan
 
         void Vis_OnFoundCone(object sender, EventArgs e)
         {
-            //Trace.t(cc.Warn, "Vis_OnFoundCone");
-            if (CurrentWayPoint != null)
-            {
-                if (subState == NavState.Moving && CurrentWayPoint.isAction && DistanceToWayPoint < 1)
-                    BeginApproach();
-            }
+            ////Trace.t(cc.Warn, "Vis_OnFoundCone");
+            //if (CurrentWayPoint != null)
+            //{
+            //    if (subState == NavState.Moving && CurrentWayPoint.isAction && DistanceToWayPoint < 1)
+            //        BeginApproach();
+            //}
         }
 
         void BeginApproach()
         {
-            Trace.t(cc.Warn, "starting and waiting for Approach task");
-            var T = new Task(new Approach().TaskRun);
-            subState = NavState.ApproachWait;
-            T.Start();
-            T.Wait();
-            Trace.t(cc.Good, "Approach completed");
+            Trace.t(cc.Warn, "nav begin Approach");
+            Program.State = RobotState.Approach;
         }
 
         void OnNavigating()
         {
+            float distToMove;
+            if (CurrentWayPoint.isAction)
+                distToMove = DistanceToWayPoint - .6F;
+            else
+                distToMove = DistanceToWayPoint;
+
+            if (distToMove < 0)
+                distToMove = 0;
+
             if (subState == NavState.MoveStart)
             {
                 Trace.t(cc.Norm, "Navigating MoveStart");
-                if (CurrentWayPoint.isAction)
-                    Trace.t(cc.Warn, "isAction");
                 lastHdg = hdgToWayPoint;
                 if (CurrentWayPoint.isAction)
-                    Program.Pilot.Send(new { Cmd = "MOV", Pwr = moveSpeed, Hdg = hdgToWayPoint, Dist = DistanceToWayPoint - .6 });
+                {
+                    if (distToMove > 0)
+                    {
+                        Trace.t(cc.Norm, string.Format("action moving {0}", distToMove));
+                        Program.Pilot.Send(new { Cmd = "MOV", Pwr = moveSpeed, Hdg = hdgToWayPoint, Dist = distToMove });
+                    }
+                    else
+                    {
+                        Trace.t(cc.Norm, "action moving; BeginApproach");
+                        BeginApproach();
+                    }
+                }
                 else
-                    Program.Pilot.Send(new { Cmd = "MOV", Pwr = moveSpeed, Hdg = hdgToWayPoint, Dist = DistanceToWayPoint });
+                {
+                    Trace.t(cc.Norm, string.Format("moving {0}", distToMove));
+                    Program.Pilot.Send(new { Cmd = "MOV", Pwr = moveSpeed, Hdg = hdgToWayPoint, Dist = distToMove });
+                }
 
                 lastMoveCmdAt = DateTime.Now;
                 subState = NavState.Moving;
@@ -163,7 +177,8 @@ namespace MiniMagellan
             {
                 if (DateTime.Now > lastMoveCmdAt + moveCmdInterval)
                 {
-                    Program.Pilot.Send(new { Cmd = "MOVxx", Pwr = moveSpeed, Hdg = hdgToWayPoint, Dist = DistanceToWayPoint });
+                    Trace.t(cc.Norm, "Move (update)");
+                    Program.Pilot.Send(new { Cmd = "MOV", Pwr = moveSpeed, Hdg = hdgToWayPoint, Dist = distToMove });
                     lastMoveCmdAt = DateTime.Now;
                 }
             }

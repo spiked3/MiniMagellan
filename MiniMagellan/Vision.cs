@@ -32,7 +32,7 @@ namespace MiniMagellan
         TimeSpan lostWaitTime = new TimeSpan(0, 0, 0, 1);
 
         // servo PID
-        float kP = 0.1F, kI = 0F, kD = 0F;
+        float kP = 0.2F, kI = 0.1F, kD = 0.008F;
         float prevErr, integral, derivative;
         public int servoPosition = 90;
         
@@ -63,8 +63,6 @@ namespace MiniMagellan
                         LostCone();
 
                 Program.Delay(100).Wait();
-
-                // todo - if navigation is turning, we would expect to need to adjust the servo with the turn
             }
 
             Trace.t(cc.Warn, "Vision exiting");
@@ -106,7 +104,6 @@ namespace MiniMagellan
                 // lots or no rects is a good indication we dont have the cone
                 // after some elapsed time of no cone, return servo to 90
 
-
                 if (1.0 / (int)a["Count"] < .49)
                     switch (coneFlag)       // no cone
                     {
@@ -127,9 +124,10 @@ namespace MiniMagellan
                             goto case ConeState.Found;
                         case ConeState.Found:
                             float et = (float)((nowTime - pidCycleTime).Milliseconds) / 1000;
-                            if (et == 0)
+                            if (et == 0 || a == null)
                                 break;
-                            servoPosition -= (int)Pid(175F, (float)(a.Center), kP, kI, kD, ref prevErr, ref integral, ref derivative, et, .8F);
+                            // 160 should be center, but we adjust as per reality
+                            servoPosition -= (int)Pid(160F, (float)(a.Center), kP, kI, kD, ref prevErr, ref integral, ref derivative, et, 1);
                             //Trace.t(cc.Norm, string.Format("Steering srvoPosition {0} e({1:F2}) i({2}) d({3}) et({4})", servoPosition, prevErr, integral, derivative, et));
                             if (servoPosition < 0)
                                 servoPosition = 0;

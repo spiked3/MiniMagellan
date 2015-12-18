@@ -12,7 +12,7 @@ using Spiked3;
 
 namespace MiniMagellan
 {
-    public enum RobotState { Init, Navigating, Idle, Finished, Shutdown, eStop };
+    public enum RobotState { Init, Navigating, Idle, Approach, Finished, Shutdown, eStop };
 
     public class Program 
     {
@@ -22,7 +22,8 @@ namespace MiniMagellan
         public static WayPoints WayPoints;
         public static Navigation Nav;
         public static Vision Vis;
-        public static Task taskVis, taskNav;
+        public static Approach Appr;
+        public static Task taskVis, taskNav, taskAppr;
 
         public bool ConsoleLockFlag;
         MqttClient Mq;
@@ -100,6 +101,10 @@ namespace MiniMagellan
             taskNav = new Task(Nav.TaskRun, TaskCreationOptions.LongRunning);
             taskNav.Start();
 
+            Appr = new Approach();
+            taskAppr = new Task(Appr.TaskRun, TaskCreationOptions.LongRunning);
+            taskAppr.Start();
+
             int telementryIdx = 0;
 
             new Task(ListenWayPointsTask).Start();
@@ -151,15 +156,15 @@ namespace MiniMagellan
                         X = Nav.CurrentWayPoint.X;
                         Y = Nav.CurrentWayPoint.Y;
                         H = (float)Nav.lastHdg;
-                        Pilot.Serial_OnReceive(new { T = "Rotate", V = "1" });
+                        Pilot.FakeOnReceive(new { T = "Rotate", V = "1" });
                         break;
                     case 'M':
                         xCon.Write("^c#");
-                        Pilot.Serial_OnReceive(new { T = "Move", V = "1" });
+                        Pilot.FakeOnReceive(new { T = "Move", V = "1" });
                         break;
                     case 'B':
                         xCon.Write("^c#");
-                        Pilot.Serial_OnReceive(new { T = "Bumper", V = "1" });
+                        Pilot.FakeOnReceive(new { T = "Bumper", V = "1" });
                         break;
                     case 'T':
                         Pilot.Send(new { Cmd = "TELEM", Flag = (++telementryIdx % 5) });

@@ -6,27 +6,30 @@ using System.IO.Ports;
 using System.Linq;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using uPLibrary.Networking.M2Mqtt;
 using uPLibrary.Networking.M2Mqtt.Messages;
 
 
 namespace Spiked3
 {
-    //+ this is intended to be THE library driver for pilot, Mono, native, serial or MQTT
+    // this is intended to be THE library driver for pilot, Mono, native, serial or MQTT
+    // .net serial handling sucks
 
     public class Pilot
     {
-         MqttClient Mq;
-         PilotSerial Serial;
-         float X, Y, H;
-         Thread serialThread;
-         TimeSpan defaultWaitTimeOut = new TimeSpan(0, 0, 0, 15);		// time out in seconds
-         public bool SimpleEventFlag;
+        MqttClient Mq;
+        PilotSerial pilotSerial;
+        float X, Y, H;
+        TaskCompletionSource<bool> pilotTcs;
+        Task serialTask;
 
         public string CommStatus { get; internal set; }
 
         public delegate void ReceiveHandler(dynamic json);
         public event ReceiveHandler OnPilotReceive;
+
+        private Pilot() { }
 
         public static Pilot Factory(string t)
         {
@@ -35,7 +38,7 @@ namespace Spiked3
             if (t.Contains("com") || t.Contains("USB"))
             {
                 _theInstance.SerialOpen(t);  // todo verify serial port is a pilot
-                _theInstance.CommStatus = string.Format("{0} opened", _theInstance.Serial.PortName);
+                _theInstance.CommStatus = string.Format("{0} opened", _theInstance.pilotSerial.PortName);
             }
             else
             {
@@ -43,31 +46,7 @@ namespace Spiked3
                 _theInstance.CommStatus = string.Format("Mqtt ({0}) connected", t);
             }
 
-            _theInstance.OnPilotReceive += _theInstance.Internal_OnPilotReceive;
-
             return _theInstance;
-        }
-
-        void Internal_OnPilotReceive(dynamic j)
-        {
-            switch ((string)(j.T))
-            {
-                case "Pose":
-                    X = j.X;
-                    Y = j.Y;
-                    H = j.H;
-                    break;
-                case "Bumper":
-                    //if (j.V == 1)
-                    //{
-                    //    Debugger.Break();
-                    //}
-                    //goto case "Move";   // c# fallthrough </RollingEyes>
-                case "Move":
-                case "Rotate":
-                    SimpleEventFlag = true;
-                    break;
-            }
         }
 
         void MqttOpen(string c)
@@ -121,21 +100,21 @@ namespace Spiked3
 
         private void SerialClose()
         {
-            if (Serial != null && Serial.IsOpen)
-                Serial.Close();
+            if (pilotSerial != null && pilotSerial.IsOpen)
+                pilotSerial.Close();
             Trace.WriteLine("Serial closed", "3");
         }
 
         private void SerialOpen(string c)
         {
-            Serial = new PilotSerial(c, 115200);
+            pilotSerial = new PilotSerial(c, 115200);
+            pilotSerial.OnReceive += Internal_OnPilotReceive;
             try
             {
-                Serial.Open();
-                Serial.WriteTimeout = 50;
-                Serial.OnReceive += Serial_OnReceive;
-                serialThread = new Thread(Serial.Start);
-                serialThread.Start();
+                pilotSerial.Open();
+                pilotSerial.WriteTimeout = 50;
+                serialTask = new Task(pilotSerial.TaskStart, TaskCreationOptions.LongRunning);
+                serialTask.Start();
             }
             catch (Exception ex)
             {
@@ -145,21 +124,15 @@ namespace Spiked3
 #endif
                 Trace.WriteLine(ex.Message);
             }
-            Trace.WriteLine(string.Format("Serial opened({0}) on {1}", Serial.IsOpen, Serial.PortName));
-        }
-
-        public void Serial_OnReceive(dynamic json)
-        {
-            if (OnPilotReceive != null)
-                OnPilotReceive(json);
+            Trace.WriteLine(string.Format("Serial opened({0}) on {1}", pilotSerial.IsOpen, pilotSerial.PortName));
         }
 
         void SerialSend(string t)
         {
-            if (Serial != null && Serial.IsOpen)
+            if (pilotSerial != null && pilotSerial.IsOpen)
             {
                 Trace.WriteLine("com<-" + t);
-                Serial.WriteLine(t);
+                pilotSerial.WriteLine(t);
             }
         }
 
@@ -170,7 +143,7 @@ namespace Spiked3
             Trace.WriteLine("j->" + jsn);
             return;
 #endif
-            if (Serial != null && Serial.IsOpen)
+            if (pilotSerial != null && pilotSerial.IsOpen)
                 SerialSend(jsn);
             if (Mq != null && Mq.IsConnected)
                 Mq.Publish("robot1/Cmd", UTF8Encoding.ASCII.GetBytes(jsn));
@@ -180,42 +153,66 @@ namespace Spiked3
         {
             try
             {
-                serialThread.Join();  // wait for thread to end
+                pilotTcs.SetResult(true);
+                serialTask.Wait();  // wait for thread to end
             }
             catch (Exception ex)
             {
             }
 
-            if (Serial != null && Serial.IsOpen)
-                Serial.Close();
-            if (Serial != null && Mq.IsConnected)
+            if (pilotSerial != null && pilotSerial.IsOpen)
+                pilotSerial.Close();
+            if (pilotSerial != null && Mq.IsConnected)
                 MqttClose();
         }
 
-        public bool waitForEvent()
+        void Internal_OnPilotReceive(dynamic j)
         {
-            return waitForEvent(defaultWaitTimeOut);
+            switch ((string)(j.T))
+            {
+                case "Pose":
+                    X = j.X;
+                    Y = j.Y;
+                    H = j.H;
+                    break;
+                case "Bumper":
+                case "Move":
+                case "Rotate":
+                    if (pilotTcs != null)
+                        pilotTcs.SetResult(true);
+                    break;
+            }
+
+            // propagate
+            if (OnPilotReceive != null)
+                OnPilotReceive(j);
         }
 
-        public bool waitForEvent(TimeSpan timeOut)
+        internal void FakeOnReceive(dynamic j)
         {
-            SimpleEventFlag = false;
-            DateTime timeOutAt = DateTime.Now + timeOut;
-            while (!SimpleEventFlag)
+            Internal_OnPilotReceive(j);
+        }
+
+        public bool waitForEvent(uint timeOut = 2000)
+        {
+            pilotTcs = new TaskCompletionSource<bool>();
+            System.Timers.Timer timer = new System.Timers.Timer { AutoReset = false, Interval = timeOut };
+            timer.Elapsed += (obj, args) => { pilotTcs.TrySetResult(false); };
+            timer.Start();
+            try
             {
-                //Dispatcher.Invoke(DispatcherPriority.Background, new Action(delegate { })); // doEvents
-                //Thread.Sleep(100);
-                Trace.WriteLine("wait for event");
-                MiniMagellan.Program.Delay(100).Wait();
-                if (DateTime.Now > timeOutAt)
-                {
-                    Send(new { Cmd = "ESC", Value = 0 });
-                    Trace.WriteLine("TimeOut waiting for event");
-                    throw new TimeoutException();
-                    //return false;
-                }
+                pilotTcs.Task.Wait();
+                return true;
             }
-            return true;
+            catch (Exception ex)
+            {
+                Console.WriteLine("Pilot WaitForEvent exception " + ex.Message);
+                return false;
+            }
+            finally
+            {
+                pilotTcs = null;
+            }
         }
     }
 
@@ -229,33 +226,48 @@ namespace Spiked3
 
         public PilotSerial(string portName, int baudRate) : base(portName, baudRate) { }
 
-        public void Start()
+        public void TaskStart()
         {
             byte[] buffer = new byte[1024];
             Action kickoffRead = null;
 
             kickoffRead = delegate
             {
-                BaseStream.BeginRead(buffer, 0, buffer.Length, delegate (IAsyncResult ar)
+                try
                 {
-                    try
+                    BaseStream.BeginRead(buffer, 0, buffer.Length, delegate (IAsyncResult ar)
                     {
-                        int actualLength = BaseStream.EndRead(ar);
-                        byte[] received = new byte[actualLength];
-                        Buffer.BlockCopy(buffer, 0, received, 0, actualLength);
-                        AppSerialDataEvent(received);
-                    }
-                    catch (Exception ex)
-                    {
-                        //System.Diagnostics.Debugger.Break();
-                        Trace.WriteLine(ex.Message);
-                    }
-                    if (IsOpen)
-                        kickoffRead();  // re-trigger
-                }, null);
+                        try
+                        {
+                            int actualLength = BaseStream.EndRead(ar);
+                            byte[] received = new byte[actualLength];
+                            Buffer.BlockCopy(buffer, 0, received, 0, actualLength);
+                            AppSerialDataEvent(received);
+                        }
+                        catch (Exception ex)
+                        {
+                            //System.Diagnostics.Debugger.Break();
+                            Trace.WriteLine(ex.Message);
+                        }
+                        if (IsOpen)
+                            kickoffRead();  // re-trigger
+                    }, null);
+                }
+                catch (Exception ex)
+                {
+                    if (ex is TaskCanceledException)
+                        return;
+                    throw;
+                }
             };
 
             kickoffRead();
+        }
+
+        public void Serial_OnReceive(dynamic json)
+        {
+            if (OnReceive != null)
+                OnReceive(json);
         }
 
         void AppSerialDataEvent(byte[] received)

@@ -17,92 +17,90 @@ namespace MiniMagellan
 
         readonly int approachSpeed = 20;
 
-        float hdgToWayPoint
+        float coneHeading
         {
             get
             {
-                return Program.Nav.hdgToWayPoint;
+                return Program.H + (Program.Vis.servoPosition - 90);
             }
         }
 
-        public float DistanceToWayPoint
-        {
-            get
-            {
-                return Program.Nav.DistanceToWayPoint;
-            }
-        }
+        DateTime approachStartedAt;
+        TimeSpan waitForTouch = new TimeSpan(0, 0, 15);
 
         public Approach() 
+        {
+        }
+
+        public void TaskRun()
         {
             Program.Pilot.OnPilotReceive += PilotReceive;
             Program.Vis.OnLostCone += Vis_OnLostCone;
             Program.Vis.OnFoundCone += Vis_OnFoundCone;
-        }
-
-        float coneHeading;
-        DateTime approachStartedAt;
-        TimeSpan waitForTouch = new TimeSpan(0, 0, 15);
-
-        public void TaskRun()
-        {
 
             // if finished, exit task
             while (Program.State != RobotState.Shutdown)
             {
-                switch (subState)
-                {
-                    case ApproachState.Start:
-                        Program.Nav.subState = Navigation.NavState.ApproachWait;                        
-                        Trace.t(cc.Status, "Approach.Start");
-                        if (Program.Vis.coneFlag != Vision.ConeState.Found)
-                            Sweep();
-                        else
-                        {
-                            Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
-                            coneHeading = (Program.Vis.servoPosition - 90) + Program.H; // at least we hope so
-                            Program.Pilot.Send(new { Cmd = "ROT", Hdg = coneHeading });
-                            Trace.t(cc.Status, "Approach Rotating");
+                if (Program.State == RobotState.Approach)
+                    switch (subState)
+                    {
+                        case ApproachState.Start:
+                            Trace.t(cc.Status, "Approach.Start");
+                            if (Program.Vis.coneFlag != Vision.ConeState.Found)
+                                Sweep();
+                            else
+                            {
+                                Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
 
-                            //Program.Pilot.SimpleEventFlag = false;
-                            //while (!Program.Pilot.SimpleEventFlag) 
-                            System.Threading.Thread.Sleep(2000);
+                                Trace.t(cc.Status, "Approach Rotating");
+                                Program.Pilot.Send(new { Cmd = "ROT", Hdg = coneHeading });
+                                Program.Pilot.waitForEvent();
 
-                            approachStartedAt = DateTime.Now;
-                            var a = new { Cmd = "Mov", Hdg = coneHeading, M1 = approachSpeed, M2 = approachSpeed };
-                            Program.Pilot.Send(a);
-                            Console.WriteLine(a);
-                            subState = ApproachState.Progress;
-                            Trace.t(cc.Status, "Approach Moving");
-                        }
-                        break;
+                                approachStartedAt = DateTime.Now;
+                                var a = new { Cmd = "Mov", Hdg = coneHeading, M1 = approachSpeed, M2 = approachSpeed };
+                                Program.Pilot.Send(a);
+                                //Console.WriteLine(a);
+                                subState = ApproachState.Progress;
+                                Trace.t(cc.Status, "Approach Moving");
+                            }
+                            break;
 
-                    case ApproachState.Progress:
-                        if (DateTime.Now > approachStartedAt + waitForTouch)
-                            subState = ApproachState.Fail1;
-                        var b = new { Cmd = "Mov", Hdg = coneHeading, M1 = approachSpeed, M2 = approachSpeed };
-                        Program.Pilot.Send(b);
-                        Console.WriteLine(b);
-                        break;
+                        case ApproachState.Progress:
+                            if (DateTime.Now > approachStartedAt + waitForTouch)
+                            {
+                                subState = ApproachState.Fail1;
+                                Program.Pilot.Send(new { Cmd = "Mov", M1 = 0, M2 = 0 });
+                                break;
+                            }
+                            var b = new { Cmd = "Mov", Hdg = coneHeading, Pwr = approachSpeed };
+                            Program.Pilot.Send(b);
+                            //Console.WriteLine(b);
+                            break;
 
-                    case ApproachState.Fail1:
-                        Trace.t(cc.Bad, "Approach.Fail1");
-                        if (DateTime.Now > approachStartedAt + waitForTouch)
-                            subState = ApproachState.Fail2;
-                        break;
+                        case ApproachState.Fail1:
+                            Trace.t(cc.Bad, "Approach.Fail1");
+                            if (DateTime.Now > approachStartedAt + waitForTouch)
+                                subState = ApproachState.Fail2;
+                            break;
 
-                    case ApproachState.Fail2:
-                        Trace.t(cc.Bad, "Approach.Fail2");
-                        subState = ApproachState.Complete;
-                        break;
-                }
+                        case ApproachState.Fail2:
+                            Trace.t(cc.Bad, "Approach.Fail2");
+                            subState = ApproachState.Complete;
+                            break;
+                    }
 
                 if (subState == ApproachState.Complete)
+                {
+                    Program.Pilot.Send(new { Cmd = "Mov", Pwr = -approachSpeed, Dist = .2F });
+                    Program.Pilot.waitForEvent();
+                    Program.State = RobotState.Idle;
                     break;
+                }
 
                 // throttle loops
-                Program.Delay(500).Wait();
+                Program.Delay(100).Wait();
             }
+
             Trace.t(cc.Warn, "Approach exiting");
         }
 
@@ -127,8 +125,6 @@ namespace MiniMagellan
             if (((string)json.V).Equals("1")) // todo this is why we are here:)
             {
                 Trace.t(cc.Good, "Expected Bumper");
-                Program.Pilot.Send(new { Cmd = "Mov", Pwr = -approachSpeed, Dist = .5F });
-                Program.Pilot.waitForEvent();
                 subState = ApproachState.Complete;
             }
         }
@@ -138,7 +134,8 @@ namespace MiniMagellan
             switch ((string)json.T)
             {
                 case "Bumper":
-                    OnBumperEvent(json);
+                    if (subState == ApproachState.Progress)
+                        OnBumperEvent(json);
                     break;
             }
         }
