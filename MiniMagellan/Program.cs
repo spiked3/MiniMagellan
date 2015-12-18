@@ -109,6 +109,7 @@ namespace MiniMagellan
                     { 'F', "Fake waypoints" },
                     { 'E', "rEset" },
                     { 'A', "Autonomous Start" },
+                { 'P', "Autonomous Start" },
                     { 'S', "State" },
                     { 'R', ".Rotate" },
                     { 'M', ".Move" },
@@ -137,6 +138,10 @@ namespace MiniMagellan
                         Trace.t(cc.Warn, string.Format("^yStarting autonomous @ {0}", DateTime.Now.ToLongTimeString()));
                         configPilot();
                         State = RobotState.Idle;
+                        break;
+                    case 'P':
+                        configPilot();
+                        Pilot.Send(new { Cmd = "MOV", Pwr = 20 });
                         break;
                     case 'S':
                         ViewStatus();

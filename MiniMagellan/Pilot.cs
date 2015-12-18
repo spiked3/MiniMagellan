@@ -20,8 +20,8 @@ namespace Spiked3
          PilotSerial Serial;
          float X, Y, H;
          Thread serialThread;
-         TimeSpan defaultWaitTimeOut = new TimeSpan(0, 0, 0, 45);		// time out in seconds
-         bool simpleEventFlag;
+         TimeSpan defaultWaitTimeOut = new TimeSpan(0, 0, 0, 15);		// time out in seconds
+         public bool SimpleEventFlag;
 
         public string CommStatus { get; internal set; }
 
@@ -65,7 +65,7 @@ namespace Spiked3
                     //goto case "Move";   // c# fallthrough </RollingEyes>
                 case "Move":
                 case "Rotate":
-                    simpleEventFlag = true;
+                    SimpleEventFlag = true;
                     break;
             }
         }
@@ -199,12 +199,14 @@ namespace Spiked3
 
         public bool waitForEvent(TimeSpan timeOut)
         {
-            simpleEventFlag = false;
+            SimpleEventFlag = false;
             DateTime timeOutAt = DateTime.Now + timeOut;
-            while (!simpleEventFlag)
+            while (!SimpleEventFlag)
             {
                 //Dispatcher.Invoke(DispatcherPriority.Background, new Action(delegate { })); // doEvents
-                Thread.Sleep(100);
+                //Thread.Sleep(100);
+                Trace.WriteLine("wait for event");
+                MiniMagellan.Program.Delay(100).Wait();
                 if (DateTime.Now > timeOutAt)
                 {
                     Send(new { Cmd = "ESC", Value = 0 });

@@ -9,8 +9,8 @@ namespace MiniMagellan
 {
     public class Navigation
     {
-        enum NavState { Rotating, MoveStart, Moving, Stopped, BumperReverse, ApproachWait };
-        NavState subState;
+        public enum NavState { Rotating, MoveStart, Moving, Stopped, BumperReverse, ApproachWait };
+        public NavState subState;
 
         bool EscapeInProgress = false;
         WayPoint EscapeWaypoint;
@@ -163,7 +163,7 @@ namespace MiniMagellan
             {
                 if (DateTime.Now > lastMoveCmdAt + moveCmdInterval)
                 {
-                    Program.Pilot.Send(new { Cmd = "MOV", Pwr = moveSpeed, Hdg = hdgToWayPoint, Dist = DistanceToWayPoint });
+                    Program.Pilot.Send(new { Cmd = "MOVxx", Pwr = moveSpeed, Hdg = hdgToWayPoint, Dist = DistanceToWayPoint });
                     lastMoveCmdAt = DateTime.Now;
                 }
             }
@@ -180,7 +180,11 @@ namespace MiniMagellan
 
         private void OnMoveComplete(dynamic json)
         {
-            if (subState == NavState.Moving && ((string)json.V).Equals("1"))
+            if (CurrentWayPoint.isAction)
+            {
+                BeginApproach();
+            }
+            else if (subState == NavState.Moving && ((string)json.V).Equals("1"))
             {
                 Trace.t(cc.Good, "Move completed");
                 Program.State = RobotState.Idle;

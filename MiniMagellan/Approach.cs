@@ -53,6 +53,7 @@ namespace MiniMagellan
                 switch (subState)
                 {
                     case ApproachState.Start:
+                        Program.Nav.subState = Navigation.NavState.ApproachWait;                        
                         Trace.t(cc.Status, "Approach.Start");
                         if (Program.Vis.coneFlag != Vision.ConeState.Found)
                             Sweep();
@@ -62,10 +63,15 @@ namespace MiniMagellan
                             coneHeading = (Program.Vis.servoPosition - 90) + Program.H; // at least we hope so
                             Program.Pilot.Send(new { Cmd = "ROT", Hdg = coneHeading });
                             Trace.t(cc.Status, "Approach Rotating");
-                            Program.Pilot.waitForEvent();
+
+                            //Program.Pilot.SimpleEventFlag = false;
+                            //while (!Program.Pilot.SimpleEventFlag) 
+                            System.Threading.Thread.Sleep(2000);
 
                             approachStartedAt = DateTime.Now;
-                            Program.Pilot.Send(new { Cmd = "Mov", Hdg = coneHeading, Pwr = approachSpeed });
+                            var a = new { Cmd = "Mov", Hdg = coneHeading, M1 = approachSpeed, M2 = approachSpeed };
+                            Program.Pilot.Send(a);
+                            Console.WriteLine(a);
                             subState = ApproachState.Progress;
                             Trace.t(cc.Status, "Approach Moving");
                         }
@@ -74,6 +80,9 @@ namespace MiniMagellan
                     case ApproachState.Progress:
                         if (DateTime.Now > approachStartedAt + waitForTouch)
                             subState = ApproachState.Fail1;
+                        var b = new { Cmd = "Mov", Hdg = coneHeading, M1 = approachSpeed, M2 = approachSpeed };
+                        Program.Pilot.Send(b);
+                        Console.WriteLine(b);
                         break;
 
                     case ApproachState.Fail1:
@@ -92,14 +101,14 @@ namespace MiniMagellan
                     break;
 
                 // throttle loops
-                System.Threading.Thread.Sleep(100);
+                Program.Delay(500).Wait();
             }
             Trace.t(cc.Warn, "Approach exiting");
         }
 
         private void Sweep()
         {
-            throw new NotImplementedException("Entered approach without cone lock");
+            throw new NotImplementedException("Sweep");
             Program.Vis.SubState = Vision.VisionState.Sweep;  // todo sweep
         }
 
@@ -117,7 +126,7 @@ namespace MiniMagellan
         {
             if (((string)json.V).Equals("1")) // todo this is why we are here:)
             {
-                Trace.t(cc.Bad, "Expected Bumper");
+                Trace.t(cc.Good, "Expected Bumper");
                 Program.Pilot.Send(new { Cmd = "Mov", Pwr = -approachSpeed, Dist = .5F });
                 Program.Pilot.waitForEvent();
                 subState = ApproachState.Complete;

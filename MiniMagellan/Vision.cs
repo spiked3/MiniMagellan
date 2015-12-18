@@ -32,7 +32,7 @@ namespace MiniMagellan
         TimeSpan lostWaitTime = new TimeSpan(0, 0, 0, 1);
 
         // servo PID
-        float kP = 0.1F, kI = 0.2F, kD = 0.01F;
+        float kP = 0.1F, kI = 0F, kD = 0F;
         float prevErr, integral, derivative;
         public int servoPosition = 90;
         
@@ -97,7 +97,7 @@ namespace MiniMagellan
 
         void PixyMqRecvd(object sender, MqttMsgPublishEventArgs e)
         {
-            //_T();
+           // xCon.t(".");
             if (SubState == VisionState.Run)
             {
                 dynamic a = JsonConvert.DeserializeObject(Encoding.UTF8.GetString(e.Message));
@@ -127,8 +127,10 @@ namespace MiniMagellan
                             goto case ConeState.Found;
                         case ConeState.Found:
                             float et = (float)((nowTime - pidCycleTime).Milliseconds) / 1000;
-                            servoPosition -= (int)Pid(160F, (float)(a.Center), kP, kI, kD, ref prevErr, ref integral, ref derivative, et, .8F);
-                            //Trace.t(cc.Norm, string.Format("Steering srvoPosition {0} e({1:F2}) i({2}) d({3})", servoPosition, prevErr, integral, derivative));
+                            if (et == 0)
+                                break;
+                            servoPosition -= (int)Pid(175F, (float)(a.Center), kP, kI, kD, ref prevErr, ref integral, ref derivative, et, .8F);
+                            //Trace.t(cc.Norm, string.Format("Steering srvoPosition {0} e({1:F2}) i({2}) d({3}) et({4})", servoPosition, prevErr, integral, derivative, et));
                             if (servoPosition < 0)
                                 servoPosition = 0;
                             else if (servoPosition > 180)
